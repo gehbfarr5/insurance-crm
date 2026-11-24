@@ -90,7 +90,8 @@ describe('Direct CardDAV & PyiCloud Reminders Unlocked Integration', () => {
     expect(patched).toContain('item2.X-ABLabel:_$!<HomePage>!$_');
     expect(patched).toContain('ORG:示例科技公司');
     expect(patched).toContain('喜欢喝乌龙茶\\n[#FUP:old001] 2026-11-24 | 跟进 | 约周三回访');
-    expect(patched).not.toContain('id_no');
+    expect(patched).toContain('BEGIN:VCARD');
+    expect(patched).toContain('END:VCARD');
 
     const groupVcard = 'BEGIN:VCARD\r\nVERSION:3.0\r\nUID:grp-1\r\nX-ADDRESSBOOKSERVER-KIND:group\r\nFN:VIP\r\nEND:VCARD\r\n';
     expect(parseVcard(groupVcard).isGroup).toBe(true);
@@ -222,7 +223,82 @@ describe('Direct CardDAV & PyiCloud Reminders Unlocked Integration', () => {
 
       const savedCard = Array.from(cardDav.cards.values())[0]!;
       expect(savedCard.parsed.fn).toBe('周明芳');
+      expect(savedCard.parsed.note).toContain('[#CRM-BEGIN]');
+      expect(savedCard.parsed.note).toContain('[#CRM-END]');
       expect(savedCard.parsed.note).toContain('[#FUP:');
+
+      // 1b. Create customer with real-format fictional id_no -> CardDAV receives decrypted 18-digit ID, idempotent on replay, preserves personal notes
+      const fullIdRes = await handle.app.inject({
+        method: 'POST',
+        url: '/api/v1/customers',
+        headers: { authorization: 'Bearer test-web-key' },
+        payload: {
+          name: '沈志强',
+          primary_phone: '13900008899',
+          id_no: '110101199001011234',
+          manual_summary: '偏爱医疗加保方案',
+        },
+      });
+      expect(fullIdRes.statusCode).toBe(201);
+      const newCust = fullIdRes.json() as { id: string; version: number };
+
+      const applyNew = await handle.app.inject({
+        method: 'POST',
+        url: '/api/v1/sync/icloud/apply',
+        headers: { authorization: 'Bearer test-web-key' },
+        payload: { customer_id: newCust.id, create_missing: true },
+      });
+      expect(applyNew.statusCode).toBe(200);
+      expect(applyNew.json().pushed_customers).toContain(newCust.id);
+
+      const newCard = Array.from(cardDav.cards.values()).find((c) => c.parsed.fn === '沈志强')!;
+      expect(newCard).toBeDefined();
+      expect(newCard.parsed.note).toContain('[#CRM-BEGIN]');
+      expect(newCard.parsed.note).toContain('身份证: 110101199001011234');
+      expect(newCard.parsed.note).toContain('偏爱医疗加保方案');
+      expect(newCard.parsed.note).toContain('[#CRM-END]');
+
+      // Replay without changes -> skips push cleanly
+      const replayNew = await handle.app.inject({
+        method: 'POST',
+        url: '/api/v1/sync/icloud/apply',
+        headers: { authorization: 'Bearer test-web-key' },
+        payload: { customer_id: newCust.id },
+      });
+      expect(replayNew.statusCode).toBe(200);
+      expect(replayNew.json().pushed_customers).toEqual([]);
+
+      // Simulate handwritten note added on iPhone + CRM summary edit -> preserves personal note and updates dossier
+      const patchedWithPersonal = patchVcardSurgical(
+        newCard.rawVcard,
+        {},
+        `个人手写备注：家中喜欢喝普洱茶\n${newCard.parsed.note ?? ''}`,
+      );
+      cardDav.cards.set(newCard.href, {
+        ...newCard,
+        etag: '"etag-iphone-personal"',
+        rawVcard: patchedWithPersonal,
+        parsed: parseVcard(patchedWithPersonal),
+      });
+      await handle.app.inject({
+        method: 'PATCH',
+        url: `/api/v1/customers/${newCust.id}`,
+        headers: { authorization: 'Bearer test-web-key' },
+        payload: { expected_version: newCust.version, manual_summary: '已约下周面谈重疾加保' },
+      });
+      const resyncPersonal = await handle.app.inject({
+        method: 'POST',
+        url: '/api/v1/sync/icloud/apply',
+        headers: { authorization: 'Bearer test-web-key' },
+        payload: { customer_id: newCust.id },
+      });
+      expect(resyncPersonal.statusCode).toBe(200);
+      expect(resyncPersonal.json().pushed_customers).toContain(newCust.id);
+      const mergedCard = cardDav.cards.get(newCard.href)!;
+      expect(mergedCard.parsed.note).toContain('个人手写备注：家中喜欢喝普洱茶');
+      expect(mergedCard.parsed.note).toContain('已约下周面谈重疾加保');
+      expect(mergedCard.parsed.note).toContain('身份证: 110101199001011234');
+      expect(mergedCard.parsed.note).not.toContain('偏爱医疗加保方案');
 
       // 2. Simulate 412 conflict on next CardDAV update -> recorded as conflict, zero overwrite
       await handle.store.upsertFollowup(

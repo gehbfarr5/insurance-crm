@@ -1,4 +1,7 @@
-import type { Customer, Followup } from './schemas.js';
+import type { Customer, Followup, Interaction, Policy } from './schemas.js';
+
+export const CRM_DOSSIER_BEGIN = '[#CRM-BEGIN]';
+export const CRM_DOSSIER_END = '[#CRM-END]';
 
 /**
  * Reused MUSE Agent Reminders Routing v1.0 standard lists.
@@ -148,10 +151,225 @@ export function planCarddavFollowupNote(
   return { note: combined, changed: true };
 }
 
+const RAPPORT_LABELS: Record<Customer['rapport_tag'], string> = {
+  friendly: '顺畅友好',
+  neutral: '中性待观察',
+  cautious: '谨慎需留心',
+  paused: '暂缓投入',
+  unassessed: '待初筛',
+};
+
+const PRIORITY_LABELS: Record<NonNullable<Customer['visit_priority']>, string> = {
+  high: '高',
+  medium: '中',
+  low: '低',
+};
+
+const CHANNEL_LABELS: Record<Interaction['channel'], string> = {
+  phone: '电话',
+  platform_event: '平台会',
+  wechat: '微信',
+  in_person_visit: '面访',
+  policy_review: '保单检视',
+  other: '其他',
+};
+
+const OUTCOME_LABELS: Record<Interaction['outcome'], string> = {
+  connected: '接通',
+  no_answer: '未接',
+  rejected: '婉拒',
+  invited: '已邀约',
+  attended: '已到场',
+  followed_up: '已跟进',
+};
+
+function sanitizeDossierText(raw: string | null | undefined, maxLen = 200): string {
+  return String(raw ?? '')
+    .replace(/\[#CRM-BEGIN\]/g, '(CRM-BEGIN)')
+    .replace(/\[#CRM-END\]/g, '(CRM-END)')
+    .replace(/\[#FUP:/g, '(FUP:')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+}
+
+export interface IcloudDossierInput {
+  customer: Customer;
+  decryptedIdNo?: string | null;
+  policies?: Policy[];
+  recentInteractions?: Interaction[];
+}
+
+export function formatIcloudCrmDossierLines(input: IcloudDossierInput): string[] {
+  const { customer: c, decryptedIdNo, policies, recentInteractions } = input;
+  const lines: string[] = [];
+
+  const idValue = sanitizeDossierText(decryptedIdNo ?? c.id_no_masked, 64);
+  if (idValue) {
+    lines.push(`身份证: ${idValue}${c.id_no_checksum_ok === false ? ' (校验异常)' : ''}`);
+  }
+
+  const baseParts = [
+    c.gender && c.gender !== '未知' ? c.gender : null,
+    c.age_override != null ? `${c.age_override}岁` : null,
+    c.family_members_count != null ? `家庭${c.family_members_count}人` : null,
+    c.source_type ? `来源:${sanitizeDossierText(c.source_type, 40)}` : null,
+    c.legacy_group_key ? `编号:${sanitizeDossierText(c.legacy_group_key, 40)}` : null,
+  ].filter((x): x is string => Boolean(x));
+  if (baseParts.length > 0) {
+    lines.push(`基础: ${baseParts.join(' | ')}`);
+  }
+
+  const tagParts = [
+    c.tags.length > 0 ? c.tags.map((t) => sanitizeDossierText(t, 40)).filter(Boolean).join('、') : null,
+    `体感:${RAPPORT_LABELS[c.rapport_tag]}`,
+    c.visit_priority ? `优先:${PRIORITY_LABELS[c.visit_priority]}` : null,
+  ].filter((x): x is string => Boolean(x));
+  if (tagParts.length > 0) {
+    lines.push(`标签: ${tagParts.join(' | ')}`);
+  }
+
+  const policyCount = Math.max(c.policy_total ?? 0, policies?.length ?? 0);
+  const premiumMeta = [c.premium_bucket, c.premium_status]
+    .map((v) => sanitizeDossierText(v, 30))
+    .filter(Boolean)
+    .join('/');
+  const assetParts = [
+    policyCount > 0 ? `保单${policyCount}张` : null,
+    c.total_premium != null ? `总保费¥${Math.round(c.total_premium).toLocaleString('en-US')}` : null,
+    premiumMeta || null,
+    c.insurer_asset_wan != null ? `我司资产${c.insurer_asset_wan}万` : null,
+    c.allocatable_quota_wan != null ? `可配额度${c.allocatable_quota_wan}万` : null,
+  ].filter((x): x is string => Boolean(x));
+  if (assetParts.length > 0) {
+    lines.push(`保费资产: ${assetParts.join(' | ')}`);
+  }
+
+  const hasVisitCounts =
+    c.kjgx_service_num != null || c.kjgx_visit_num != null || c.kjgx_offline_visit_num != null;
+  const kjgxStatus = [c.kjgx_customer_status, c.kjgx_work_status]
+    .map((v) => sanitizeDossierText(v, 30))
+    .filter(Boolean)
+    .join('/');
+  const kjgxParts = [
+    c.kjgx_customer_no ? `客号${sanitizeDossierText(c.kjgx_customer_no, 40)}` : null,
+    c.kjgx_db_customer_id ? `DB:${sanitizeDossierText(c.kjgx_db_customer_id, 40)}` : null,
+    c.kjgx_customer_level ? `等级${sanitizeDossierText(c.kjgx_customer_level, 30)}` : null,
+    c.kjgx_temp_value != null || c.kjgx_temp_level
+      ? `客温${c.kjgx_temp_value ?? '-'}${c.kjgx_temp_level ? `(${sanitizeDossierText(c.kjgx_temp_level, 20)})` : ''}`
+      : null,
+    kjgxStatus ? `状态${kjgxStatus}` : null,
+    c.kjgx_asset_index != null ? `资产指数${c.kjgx_asset_index}` : null,
+    c.kjgx_kyc_score != null ? `KYC${c.kjgx_kyc_score}` : null,
+    hasVisitCounts
+      ? `服务${c.kjgx_service_num ?? 0}/拜访${c.kjgx_visit_num ?? 0}/面访${c.kjgx_offline_visit_num ?? 0}`
+      : null,
+  ].filter((x): x is string => Boolean(x));
+  if (kjgxParts.length > 0) {
+    lines.push(`科技个险: ${kjgxParts.join(' | ')}`);
+  }
+
+  if (policies && policies.length > 0) {
+    lines.push('保单明细:');
+    const shown = policies.slice(0, 15);
+    for (const p of shown) {
+      const pName = sanitizeDossierText(p.product_name, 80);
+      const pNo = sanitizeDossierText(p.policy_no, 60);
+      const itemParts = [
+        pName || pNo,
+        p.holder_role,
+        p.annual_premium != null ? `¥${Math.round(p.annual_premium).toLocaleString('en-US')}` : null,
+        p.policy_status ? sanitizeDossierText(p.policy_status, 30) : null,
+        p.payment_term ? sanitizeDossierText(p.payment_term, 30) : null,
+        p.coverage_gap_note ? `缺口:${sanitizeDossierText(p.coverage_gap_note, 80)}` : null,
+        pName && pNo ? `单号:${pNo}` : null,
+      ].filter((x): x is string => Boolean(x));
+      if (itemParts.length > 0) {
+        lines.push(`- ${itemParts.join(' | ')}`);
+      }
+    }
+    if (policies.length > 15) {
+      lines.push(`- ...等共${policies.length}张保单`);
+    }
+  }
+
+  if (c.manual_summary?.trim()) {
+    const cleanSummary = sanitizeDossierText(c.manual_summary, 300);
+    if (cleanSummary) {
+      lines.push(`人工备注: ${cleanSummary}`);
+    }
+  }
+
+  if (recentInteractions && recentInteractions.length > 0) {
+    const shownInts = recentInteractions.slice(0, 3);
+    lines.push('近期沟通:');
+    for (const it of shownInts) {
+      const dateStr = it.occurred_at.slice(0, 10);
+      const ch = CHANNEL_LABELS[it.channel] ?? it.channel;
+      const out = OUTCOME_LABELS[it.outcome] ?? it.outcome;
+      const summary = sanitizeDossierText(it.summary, 120);
+      const attitude = it.attitude_note?.trim() ? ` (态度:${sanitizeDossierText(it.attitude_note, 60)})` : '';
+      lines.push(`- ${dateStr} [${ch}/${out}] ${summary}${attitude}`);
+    }
+  }
+
+  if (c.data_quality_flags?.length) {
+    const flags = c.data_quality_flags.map((f) => sanitizeDossierText(f, 60)).filter(Boolean);
+    if (flags.length > 0) {
+      lines.push(`质量复核: ${flags.join('、')}`);
+    }
+  }
+
+  return lines;
+}
+
+export function planCarddavCrmDossierNote(
+  existingNote: string | null | undefined,
+  dossierLines: string[],
+  followupEntry?: CarddavFollowupEntry | null,
+): { note: string; changed: boolean } {
+  const normalizedExisting = existingNote ? existingNote.replace(/\r\n/g, '\n') : '';
+  const cleanLines = dossierLines
+    .map((l) => sanitizeDossierText(l, 400))
+    .filter(Boolean);
+  const blockLines = cleanLines.length > 0 ? [CRM_DOSSIER_BEGIN, ...cleanLines, CRM_DOSSIER_END] : [];
+
+  const rawLines = normalizedExisting ? normalizedExisting.split('\n') : [];
+  const beginIdx = rawLines.findIndex((l) => l.trim() === CRM_DOSSIER_BEGIN);
+  const endIdx =
+    beginIdx !== -1 ? rawLines.findIndex((l, i) => i > beginIdx && l.trim() === CRM_DOSSIER_END) : -1;
+
+  let nextLines: string[];
+  if (beginIdx !== -1 && endIdx !== -1) {
+    nextLines = [...rawLines.slice(0, beginIdx), ...blockLines, ...rawLines.slice(endIdx + 1)];
+  } else if (blockLines.length > 0) {
+    const firstFupIdx = rawLines.findIndex((l) => l.startsWith('[#FUP:'));
+    if (firstFupIdx !== -1) {
+      nextLines = [...rawLines.slice(0, firstFupIdx), ...blockLines, ...rawLines.slice(firstFupIdx)];
+    } else {
+      const prefix = [...rawLines];
+      while (prefix.length > 0 && prefix[prefix.length - 1] === '') {
+        prefix.pop();
+      }
+      nextLines = [...prefix, ...blockLines];
+    }
+  } else {
+    nextLines = rawLines;
+  }
+
+  const afterDossier = nextLines.join('\n');
+  const finalNote = followupEntry ? planCarddavFollowupNote(afterDossier, followupEntry).note : afterDossier;
+  return {
+    note: finalNote,
+    changed: finalNote !== normalizedExisting,
+  };
+}
+
 /**
- * Sanitized iCloud Contact payload enforcing the strict Privacy Fence.
- * Sensitive insurance fields (id_no, policies, total_premium, rapport_tag, health notes)
- * are NEVER included.
+ * Full iCloud Contact payload (privacy fence removed per user authorization).
+ * Core vCard fields + full CRM insurance dossier metadata are included while
+ * user handwritten notes in iPhone Contacts NOTE remain preserved outside markers.
  */
 export interface SanitizedIcloudContact {
   fullName: string;
@@ -160,21 +378,42 @@ export interface SanitizedIcloudContact {
   address: string | null;
   company: string | null;
   groupNames: string[];
+  idNo?: string | null;
+  gender?: Customer['gender'];
+  sourceType?: string | null;
+  rapportTag?: Customer['rapport_tag'];
+  policyTotal?: number;
+  totalPremium?: number | null;
+  insurerAssetWan?: number | null;
+  allocatableQuotaWan?: number | null;
+  kjgxCustomerNo?: string | null;
+  kjgxCustomerLevel?: string | null;
+  kjgxTempValue?: number | null;
+  kjgxTempLevel?: string | null;
+  manualSummary?: string | null;
+  policiesCount?: number;
 }
 
-export function sanitizeCustomerForIcloud(
-  customer: Pick<
-    Customer,
-    'name' | 'primary_phone' | 'phones' | 'birthday' | 'address' | 'company_or_occupation' | 'tags'
-  >,
-  extraGroups: string[] = [],
-): SanitizedIcloudContact {
+export type IcloudContactPayload = SanitizedIcloudContact;
+
+export function buildIcloudContactPayload(
+  customer: Partial<Customer> &
+    Pick<
+      Customer,
+      'name' | 'primary_phone' | 'phones' | 'birthday' | 'address' | 'company_or_occupation' | 'tags'
+    >,
+  opts?: {
+    decryptedIdNo?: string | null;
+    extraGroups?: string[];
+    policies?: Policy[];
+  },
+): IcloudContactPayload {
   const phoneSet = new Set<string>();
   if (customer.primary_phone) phoneSet.add(customer.primary_phone);
   for (const p of customer.phones ?? []) {
     if (p.value) phoneSet.add(p.value);
   }
-  const groupSet = new Set<string>([...(customer.tags ?? []), ...extraGroups].filter(Boolean));
+  const groupSet = new Set<string>([...(customer.tags ?? []), ...(opts?.extraGroups ?? [])].filter(Boolean));
   return {
     fullName: customer.name,
     phones: Array.from(phoneSet),
@@ -182,7 +421,40 @@ export function sanitizeCustomerForIcloud(
     address: customer.address ?? null,
     company: customer.company_or_occupation ?? null,
     groupNames: Array.from(groupSet),
+    idNo: opts?.decryptedIdNo ?? customer.id_no_masked ?? null,
+    gender: customer.gender,
+    sourceType: customer.source_type ?? null,
+    rapportTag: customer.rapport_tag,
+    policyTotal: customer.policy_total,
+    totalPremium: customer.total_premium ?? null,
+    insurerAssetWan: customer.insurer_asset_wan ?? null,
+    allocatableQuotaWan: customer.allocatable_quota_wan ?? null,
+    kjgxCustomerNo: customer.kjgx_customer_no ?? null,
+    kjgxCustomerLevel: customer.kjgx_customer_level ?? null,
+    kjgxTempValue: customer.kjgx_temp_value ?? null,
+    kjgxTempLevel: customer.kjgx_temp_level ?? null,
+    manualSummary: customer.manual_summary ?? null,
+    policiesCount: opts?.policies?.length ?? customer.policy_total ?? 0,
   };
+}
+
+export function sanitizeCustomerForIcloud(
+  customer: Partial<Customer> &
+    Pick<
+      Customer,
+      'name' | 'primary_phone' | 'phones' | 'birthday' | 'address' | 'company_or_occupation' | 'tags'
+    >,
+  extraGroups: string[] = [],
+  opts?: {
+    decryptedIdNo?: string | null;
+    policies?: Policy[];
+  },
+): SanitizedIcloudContact {
+  return buildIcloudContactPayload(customer, {
+    extraGroups,
+    decryptedIdNo: opts?.decryptedIdNo,
+    policies: opts?.policies,
+  });
 }
 
 export interface ThreeWayDiffResult {

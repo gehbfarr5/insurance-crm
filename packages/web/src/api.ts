@@ -85,6 +85,7 @@ export interface IcloudPreviewItem {
   customer_name: string;
   contact_link_status: string;
   write_gate_status: 'locked_preview_only' | 'enabled';
+  privacy_fence_mode?: 'disabled_full_dossier' | string;
   planned_followup_note: string | null;
   sanitized_payload: {
     fullName: string;
@@ -93,6 +94,13 @@ export interface IcloudPreviewItem {
     address: string | null;
     company: string | null;
     groupNames: string[];
+    idNo?: string | null;
+    policyTotal?: number;
+    totalPremium?: number | null;
+    kjgxCustomerNo?: string | null;
+    kjgxTempValue?: number | null;
+    kjgxTempLevel?: string | null;
+    manualSummary?: string | null;
   };
   diff: {
     toPushToRemote: Record<string, unknown>;
@@ -135,6 +143,7 @@ export interface SyncStatusResponse {
     contacts_write_enabled: boolean;
     reminders_write_enabled: boolean;
     carddav_connected: boolean;
+    privacy_fence_mode?: string;
     transport_mode: string;
   };
 }

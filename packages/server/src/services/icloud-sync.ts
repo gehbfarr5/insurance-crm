@@ -2,11 +2,12 @@ import {
   type Customer,
   type Followup,
   type ResolveConflictInput,
+  buildIcloudContactPayload,
   computeThreeWayDiff,
+  formatIcloudCrmDossierLines,
   formatMuseReminderPayload,
   normalizePhone,
-  planCarddavFollowupNote,
-  sanitizeCustomerForIcloud,
+  planCarddavCrmDossierNote,
 } from '@insurance-crm/shared';
 import type { CardDavContactPatch, CardDavContactRecord, CardDavTransport } from './carddav-client.js';
 import { type ActorContext, ConflictError, type CrmStore, NotFoundError } from './store.js';
@@ -82,8 +83,9 @@ export interface IcloudPreviewItem {
   customer_name: string;
   contact_link_status: string;
   write_gate_status: 'locked_preview_only' | 'enabled';
+  privacy_fence_mode: 'disabled_full_dossier';
   planned_followup_note: string | null;
-  sanitized_payload: ReturnType<typeof sanitizeCustomerForIcloud>;
+  sanitized_payload: ReturnType<typeof buildIcloudContactPayload>;
   diff: ReturnType<typeof computeThreeWayDiff>;
   pending_reminders: Array<ReturnType<typeof formatMuseReminderPayload>>;
 }
@@ -141,6 +143,7 @@ export class IcloudSyncService {
       contacts_write_enabled: this.contactsWriteEnabled,
       reminders_write_enabled: this.remindersWriteEnabled,
       carddav_connected: Boolean(this.opts.cardDav),
+      privacy_fence_mode: 'disabled_full_dossier' as const,
       transport_mode: this.opts.cardDav
         ? ('direct_carddav' as const)
         : this.transport.isLive
@@ -203,11 +206,23 @@ export class IcloudSyncService {
       targets.push(...search.customers);
     }
 
-    const [allLinks, allFollowups, openConflicts, cardLookup] = await Promise.all([
+    const targetIds = targets.map((c) => c.id);
+    const [
+      allLinks,
+      allFollowups,
+      openConflicts,
+      cardLookup,
+      decryptedIdMap,
+      policiesMap,
+      interactionsMap,
+    ] = await Promise.all([
       this.store.listExternalLinks(customerId),
       this.store.listFollowups({ status: 'open', customer_id: customerId }),
       this.store.listConflicts('open'),
       this.loadCardDavLookup(),
+      this.store.getDecryptedIdMap(targetIds),
+      this.store.listPoliciesByCustomerIds(targetIds),
+      this.store.listRecentInteractionsByCustomerIds(targetIds, 3),
     ]);
 
     const todayUtc = new Date().toISOString().slice(0, 10);
@@ -217,7 +232,13 @@ export class IcloudSyncService {
 
     const items: IcloudPreviewItem[] = [];
     for (const c of targets) {
-      const sanitized = sanitizeCustomerForIcloud(c);
+      const decryptedIdNo = decryptedIdMap.get(c.id) ?? null;
+      const custPolicies = policiesMap.get(c.id) ?? [];
+      const custInteractions = interactionsMap.get(c.id) ?? [];
+      const sanitized = buildIcloudContactPayload(c, {
+        decryptedIdNo,
+        policies: custPolicies,
+      });
       const link = allLinks.find((l) => l.customer_id === c.id && l.system === 'icloud_contact');
       const base = (link?.last_synced_payload ?? {}) as Record<string, unknown>;
 
@@ -287,7 +308,11 @@ export class IcloudSyncService {
             : null;
       const markerId = toSafeMarkerId(primaryFollowup?.id ?? `crm-${c.id.slice(0, 8)}`);
       const markerDate = toSafeIsoDate(
-        primaryFollowup?.due_at ?? singleCustomerLatestInteractionAt ?? c.next_followup_at ?? c.updated_at,
+        primaryFollowup?.due_at ??
+          custInteractions[0]?.occurred_at ??
+          singleCustomerLatestInteractionAt ??
+          c.next_followup_at ??
+          c.updated_at,
         todayUtc,
       );
       const markerKind = primaryFollowup ? '跟进' : '档案';
@@ -295,7 +320,13 @@ export class IcloudSyncService {
         primaryFollowup?.title ?? RAPPORT_SAFE_SUMMARY[c.rapport_tag],
         '待初筛跟进',
       );
-      const plannedNote = planCarddavFollowupNote(existingNote, {
+      const dossierLines = formatIcloudCrmDossierLines({
+        customer: c,
+        decryptedIdNo,
+        policies: custPolicies,
+        recentInteractions: custInteractions,
+      });
+      const plannedNote = planCarddavCrmDossierNote(existingNote, dossierLines, {
         id: markerId,
         date: markerDate,
         kind: markerKind,
@@ -307,6 +338,7 @@ export class IcloudSyncService {
         customer_name: c.name,
         contact_link_status: link?.sync_status ?? (cardMatch ? 'matched_by_phone' : 'unlinked'),
         write_gate_status: gateStatus,
+        privacy_fence_mode: 'disabled_full_dossier',
         planned_followup_note: plannedNote,
         sanitized_payload: sanitized,
         diff,
@@ -403,8 +435,20 @@ export class IcloudSyncService {
 
       const links = await this.store.listExternalLinks(item.customer_id);
       const link = links.find((l) => l.system === 'icloud_contact');
+      let cardRec: CardDavContactRecord | null = null;
+      if (this.opts.cardDav) {
+        cardRec = this.matchCardRecord(item.sanitized_payload.phones, link?.external_id, cardLookup);
+        if (!cardRec && link?.external_id) {
+          cardRec = await this.opts.cardDav.getCard(link.external_id);
+        }
+      }
+
       const baseNote = typeof link?.last_synced_payload?.note === 'string' ? link.last_synced_payload.note : null;
-      const needsNoteUpdate = Boolean(item.planned_followup_note && baseNote !== item.planned_followup_note);
+      const remoteNote = cardRec ? (cardRec.parsed.note ?? '') : null;
+      const needsNoteUpdate = Boolean(
+        item.planned_followup_note &&
+          (baseNote !== item.planned_followup_note || (remoteNote !== null && remoteNote !== item.planned_followup_note)),
+      );
       const needsPush = Object.keys(item.diff.toPushToRemote).length > 0 || !link || needsNoteUpdate;
 
       if (!needsPush) continue;
@@ -420,11 +464,6 @@ export class IcloudSyncService {
       };
 
       if (this.opts.cardDav) {
-        let cardRec = this.matchCardRecord(item.sanitized_payload.phones, link?.external_id, cardLookup);
-        if (!cardRec && link?.external_id) {
-          cardRec = await this.opts.cardDav.getCard(link.external_id);
-        }
-
         if (cardRec) {
           const patch: CardDavContactPatch = {};
           if ('fullName' in item.diff.toPushToRemote) patch.fullName = item.sanitized_payload.fullName;

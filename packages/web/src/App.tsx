@@ -691,7 +691,7 @@ export function App() {
                         <div>手机：{detail.customer.primary_phone ?? '-'}</div>
                         <div>生日：{detail.customer.birthday ?? '-'} ({detail.customer.birthday_source})</div>
                         <div>地址：{detail.customer.address ?? '-'}</div>
-                        <div>身份证：{detail.customer.id_no_masked ?? '-'} <span className="crm-badge crm-badge-warning">严禁进 iCloud</span></div>
+                        <div>身份证：{detail.customer.id_no_masked ?? '-'} <span className="crm-badge crm-badge-success">同步通讯录含完整档案</span></div>
                       </div>
                       <div className="p-3 rounded-lg border border-[var(--card-border)] space-y-2">
                         <div className="font-semibold">保单档案 ({detail.policies.length})</div>
@@ -850,10 +850,10 @@ export function App() {
                 <section className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-sm font-semibold">iCloud 通讯录人工预览（保留 [#FUP:] 小行摘要）</h2>
+                      <h2 className="text-sm font-semibold">iCloud 通讯录人工预览（完整客户档案 + [#FUP:] 摘要）</h2>
                       {syncStatus?.contacts?.contacts_write_enabled ? (
                         <span className="crm-badge crm-badge-success">
-                          已放开写入 · 人工触发 · 保留 [#FUP:]
+                          已放开写入 · 无隐私围栏 · 完整档案 + [#FUP:]
                           {syncStatus.contacts.carddav_connected ? ' (CardDAV 直连)' : ''}
                         </span>
                       ) : (
@@ -893,7 +893,7 @@ export function App() {
                     </div>
                   </div>
                   <p className="text-xs text-[var(--muted-foreground)]">
-                    仅展示经隐私围栏过滤后的通讯录字段及可幂等合并的 <code>[#FUP:]</code> 单行摘要（保留个人备注，严禁身份证号/保单金额外泄）。
+                    已取消隐私围栏：将完整身份证号、保单明细、保费资产、科技个险指标、人工备注与近期沟通以幂等 <code>[#CRM-BEGIN]...[#CRM-END]</code> 区块写入 iPhone 通讯录备注，同时完整保留原有个人手写备注、头像与 <code>[#FUP:]</code> 单行跟进摘要。
                   </p>
                   {icloudPreview && (
                     <div className="grid sm:grid-cols-2 gap-3">
@@ -918,10 +918,17 @@ export function App() {
                               <div>电话：{item.sanitized_payload.phones.join(', ') || '-'}</div>
                               <div>生日：{item.sanitized_payload.birthday ?? '-'}</div>
                               <div>地址：{item.sanitized_payload.address ?? '-'}</div>
+                              <div>
+                                保费/保单：{fmtRMB(item.sanitized_payload.totalPremium ?? null)} /{' '}
+                                {item.sanitized_payload.policyTotal ?? 0} 张保单
+                              </div>
+                              <div>
+                                身份证：{item.sanitized_payload.idNo ? '已含完整/归档证件号' : '无'}
+                              </div>
                             </div>
-                            <div className="bg-[var(--secondary)] p-2 rounded font-mono text-[11px] break-all">
+                            <pre className="bg-[var(--secondary)] p-2 rounded font-mono text-[11px] whitespace-pre-wrap break-words max-h-56 overflow-y-auto">
                               {item.planned_followup_note ?? '(无摘要)'}
-                            </div>
+                            </pre>
                             {syncStatus?.contacts?.contacts_write_enabled && (
                               <div className="pt-1">
                                 <button

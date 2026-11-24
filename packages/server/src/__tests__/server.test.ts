@@ -161,9 +161,16 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
     const preview = previewRes.json()[0];
     expect(preview.diff.conflicts[0].field).toBe('address');
     expect(preview.pending_reminders[0].listName).toBe('工作待办 Work');
-    expect(preview.sanitized_payload).not.toHaveProperty('id_no_masked');
+    expect(preview.privacy_fence_mode).toBe('disabled_full_dossier');
+    expect(preview.sanitized_payload.idNo).toBe('3101**********001X');
+    expect(preview.sanitized_payload.totalPremium).toBe(128400);
     expect(preview.write_gate_status).toBe('locked_preview_only');
-    expect(preview.planned_followup_note).toMatch(/^\[#FUP:[A-Za-z0-9_-]+\] \d{4}-\d{2}-\d{2} \| /);
+    expect(preview.planned_followup_note).toContain('[#CRM-BEGIN]');
+    expect(preview.planned_followup_note).toContain('身份证:');
+    expect(preview.planned_followup_note).toContain('总保费¥128,400');
+    expect(preview.planned_followup_note).toContain('保单明细:');
+    expect(preview.planned_followup_note).toContain('[#CRM-END]');
+    expect(preview.planned_followup_note).toMatch(/\[#FUP:[A-Za-z0-9_-]+\] \d{4}-\d{2}-\d{2} \| /);
 
     const resolveRes = await handle.app.inject({
       method: 'POST',
@@ -275,6 +282,7 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
         contacts_write_enabled: false,
         reminders_write_enabled: false,
         carddav_connected: false,
+        privacy_fence_mode: 'disabled_full_dossier',
         transport_mode: 'dry_snapshot',
       },
     });

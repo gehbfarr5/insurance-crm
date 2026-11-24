@@ -168,6 +168,13 @@ export interface CrmStore {
   commitStaging(stagingId: string, actor: ActorContext): Promise<{ staging: ImportStagingItem; customer: Customer }>;
   rejectStaging(stagingId: string, actor: ActorContext): Promise<ImportStagingItem>;
 
+  getDecryptedIdMap(customerIds: string[]): Promise<Map<string, string>>;
+  listPoliciesByCustomerIds(customerIds: string[]): Promise<Map<string, Policy[]>>;
+  listRecentInteractionsByCustomerIds(
+    customerIds: string[],
+    perCustomer?: number,
+  ): Promise<Map<string, Interaction[]>>;
+
   listAuditLogs(limit?: number): Promise<AuditLogEntry[]>;
   appendAudit(entry: Omit<AuditLogEntry, 'id' | 'created_at'>): Promise<AuditLogEntry>;
   getDashboard(): Promise<{
@@ -975,6 +982,54 @@ export class InMemoryDemoStore implements CrmStore {
     return item;
   }
 
+  async getDecryptedIdMap(customerIds: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    for (const id of customerIds) {
+      const rec = this.idVaultMap.get(id);
+      if (!rec?.encrypted) continue;
+      try {
+        out.set(id, this.vault.decrypt(rec.encrypted));
+      } catch {
+        // Fallback cleanly to id_no_masked
+      }
+    }
+    return out;
+  }
+
+  async listPoliciesByCustomerIds(customerIds: string[]): Promise<Map<string, Policy[]>> {
+    const out = new Map<string, Policy[]>();
+    if (customerIds.length === 0) return out;
+    const idSet = new Set(customerIds);
+    for (const p of this.policies) {
+      if (!idSet.has(p.customer_id)) continue;
+      const arr = out.get(p.customer_id);
+      if (arr) arr.push(p);
+      else out.set(p.customer_id, [p]);
+    }
+    return out;
+  }
+
+  async listRecentInteractionsByCustomerIds(
+    customerIds: string[],
+    perCustomer = 3,
+  ): Promise<Map<string, Interaction[]>> {
+    const out = new Map<string, Interaction[]>();
+    if (customerIds.length === 0 || perCustomer <= 0) return out;
+    const idSet = new Set(customerIds);
+    const matching = this.interactions
+      .filter((i) => idSet.has(i.customer_id))
+      .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+    for (const it of matching) {
+      const arr = out.get(it.customer_id);
+      if (!arr) {
+        out.set(it.customer_id, [it]);
+      } else if (arr.length < perCustomer) {
+        arr.push(it);
+      }
+    }
+    return out;
+  }
+
   async listAuditLogs(limit = 30): Promise<AuditLogEntry[]> {
     return this.auditLogs.slice(0, limit);
   }
@@ -1099,6 +1154,44 @@ function mapFollowupRow(r: typeof followups.$inferSelect): Followup {
   };
 }
 
+function mapPolicyRow(p: typeof policies.$inferSelect): Policy {
+  return {
+    id: p.id,
+    customer_id: p.customer_id,
+    policy_no: p.policy_no,
+    insurer: p.insurer,
+    product_name: p.product_name,
+    holder_role: (p.holder_role as Policy['holder_role']) ?? '投保人',
+    effective_date: p.effective_date,
+    annual_premium: toNum(p.annual_premium),
+    payment_term: p.payment_term,
+    policy_status: p.policy_status,
+    is_orphan_policy: p.is_orphan_policy,
+    coverage_gap_note: p.coverage_gap_note,
+    source: p.source,
+    version: p.version,
+    created_at: p.created_at.toISOString(),
+    updated_at: p.updated_at.toISOString(),
+  };
+}
+
+function mapInteractionRow(i: typeof interactions.$inferSelect): Interaction {
+  return {
+    id: i.id,
+    customer_id: i.customer_id,
+    campaign_id: i.campaign_id,
+    channel: i.channel as Interaction['channel'],
+    occurred_at: i.occurred_at.toISOString(),
+    outcome: i.outcome as Interaction['outcome'],
+    summary: i.summary,
+    attitude_note: i.attitude_note,
+    need_signals: i.need_signals ?? [],
+    enqueue_kjgx_visit: i.enqueue_kjgx_visit,
+    recorded_by_actor: i.recorded_by_actor,
+    created_at: i.created_at.toISOString(),
+  };
+}
+
 function mapJobRow(r: typeof kjgxWritebackJobs.$inferSelect, customerName?: string): KjgxWritebackJob {
   return {
     id: r.id,
@@ -1203,38 +1296,8 @@ export class PostgresStore implements CrmStore {
 
     return {
       customer: mapCustomerRow(row),
-      policies: pols.map((p) => ({
-        id: p.id,
-        customer_id: p.customer_id,
-        policy_no: p.policy_no,
-        insurer: p.insurer,
-        product_name: p.product_name,
-        holder_role: (p.holder_role as Policy['holder_role']) ?? '投保人',
-        effective_date: p.effective_date,
-        annual_premium: toNum(p.annual_premium),
-        payment_term: p.payment_term,
-        policy_status: p.policy_status,
-        is_orphan_policy: p.is_orphan_policy,
-        coverage_gap_note: p.coverage_gap_note,
-        source: p.source,
-        version: p.version,
-        created_at: p.created_at.toISOString(),
-        updated_at: p.updated_at.toISOString(),
-      })),
-      interactions: ints.map((i) => ({
-        id: i.id,
-        customer_id: i.customer_id,
-        campaign_id: i.campaign_id,
-        channel: i.channel as Interaction['channel'],
-        occurred_at: i.occurred_at.toISOString(),
-        outcome: i.outcome as Interaction['outcome'],
-        summary: i.summary,
-        attitude_note: i.attitude_note,
-        need_signals: i.need_signals ?? [],
-        enqueue_kjgx_visit: i.enqueue_kjgx_visit,
-        recorded_by_actor: i.recorded_by_actor,
-        created_at: i.created_at.toISOString(),
-      })),
+      policies: pols.map(mapPolicyRow),
+      interactions: ints.map(mapInteractionRow),
       followups: fus.map(mapFollowupRow),
       external_links: links.map((l) => ({
         id: l.id,
@@ -2116,6 +2179,66 @@ export class PostgresStore implements CrmStore {
       created_by_actor: updated.created_by_actor,
       created_at: updated.created_at.toISOString(),
     };
+  }
+
+  async getDecryptedIdMap(customerIds: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const uniq = Array.from(new Set(customerIds.filter(Boolean)));
+    if (uniq.length === 0) return out;
+    const rows = await this.db
+      .select({ id: customers.id, id_no_encrypted: customers.id_no_encrypted })
+      .from(customers)
+      .where(inArray(customers.id, uniq));
+    for (const row of rows) {
+      if (!row.id_no_encrypted) continue;
+      const buf = Buffer.isBuffer(row.id_no_encrypted)
+        ? row.id_no_encrypted
+        : Buffer.from(row.id_no_encrypted);
+      try {
+        out.set(row.id, this.vault.decrypt(buf));
+      } catch {
+        // Fallback to id_no_masked if vault key does not match a row
+      }
+    }
+    return out;
+  }
+
+  async listPoliciesByCustomerIds(customerIds: string[]): Promise<Map<string, Policy[]>> {
+    const out = new Map<string, Policy[]>();
+    const uniq = Array.from(new Set(customerIds.filter(Boolean)));
+    if (uniq.length === 0) return out;
+    const rows = await this.db.select().from(policies).where(inArray(policies.customer_id, uniq));
+    for (const r of rows) {
+      const mapped = mapPolicyRow(r);
+      const arr = out.get(mapped.customer_id);
+      if (arr) arr.push(mapped);
+      else out.set(mapped.customer_id, [mapped]);
+    }
+    return out;
+  }
+
+  async listRecentInteractionsByCustomerIds(
+    customerIds: string[],
+    perCustomer = 3,
+  ): Promise<Map<string, Interaction[]>> {
+    const out = new Map<string, Interaction[]>();
+    const uniq = Array.from(new Set(customerIds.filter(Boolean)));
+    if (uniq.length === 0 || perCustomer <= 0) return out;
+    const rows = await this.db
+      .select()
+      .from(interactions)
+      .where(inArray(interactions.customer_id, uniq))
+      .orderBy(desc(interactions.occurred_at));
+    for (const r of rows) {
+      const mapped = mapInteractionRow(r);
+      const arr = out.get(mapped.customer_id);
+      if (!arr) {
+        out.set(mapped.customer_id, [mapped]);
+      } else if (arr.length < perCustomer) {
+        arr.push(mapped);
+      }
+    }
+    return out;
   }
 
   async listAuditLogs(limit = 30): Promise<AuditLogEntry[]> {
