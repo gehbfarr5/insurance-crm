@@ -78,6 +78,17 @@ export class HttpIcloudMcpTransport implements IcloudMcpTransport {
   }
 }
 
+export interface IcloudPreviewFilter {
+  customerId?: string;
+  customerIds?: string[];
+  query?: string;
+  minPremium?: number;
+  onlyWithPhone?: boolean;
+  hasManualSummary?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
 export interface IcloudPreviewItem {
   customer_id: string;
   customer_name: string;
@@ -193,19 +204,37 @@ export class IcloudSyncService {
     return null;
   }
 
-  async previewSync(customerId?: string, limit = 20): Promise<IcloudPreviewItem[]> {
-    const safeLimit = Math.min(Math.max(Number.isFinite(limit) ? Math.trunc(limit) : 20, 1), 50);
+  async previewSync(
+    filterOrCustomerId?: string | IcloudPreviewFilter,
+    legacyLimit = 20,
+  ): Promise<IcloudPreviewItem[]> {
+    const filter: IcloudPreviewFilter =
+      typeof filterOrCustomerId === 'string'
+        ? { customerId: filterOrCustomerId, limit: legacyLimit }
+        : filterOrCustomerId ?? { limit: legacyLimit };
+
+    const safeLimit = Math.min(Math.max(Number.isFinite(filter.limit) ? Math.trunc(filter.limit!) : 20, 1), 50);
+    const safeOffset = Math.max(Number.isFinite(filter.offset) ? Math.trunc(filter.offset!) : 0, 0);
     const targets: Customer[] = [];
     let singleCustomerLatestInteractionAt: string | null = null;
-    if (customerId) {
-      const detail = await this.store.getCustomer360(customerId);
+    if (filter.customerId) {
+      const detail = await this.store.getCustomer360(filter.customerId);
       targets.push(detail.customer);
       singleCustomerLatestInteractionAt = detail.interactions[0]?.occurred_at ?? null;
     } else {
-      const search = await this.store.searchCustomers({ limit: safeLimit });
+      const search = await this.store.searchCustomers({
+        customer_ids: filter.customerIds,
+        query: filter.query,
+        min_premium: filter.minPremium,
+        only_with_phone: filter.onlyWithPhone,
+        has_manual_summary: filter.hasManualSummary,
+        limit: safeLimit,
+        offset: safeOffset,
+      });
       targets.push(...search.customers);
     }
 
+    const scopedCustomerId = filter.customerId;
     const targetIds = targets.map((c) => c.id);
     const [
       allLinks,
@@ -216,8 +245,8 @@ export class IcloudSyncService {
       policiesMap,
       interactionsMap,
     ] = await Promise.all([
-      this.store.listExternalLinks(customerId),
-      this.store.listFollowups({ status: 'open', customer_id: customerId }),
+      this.store.listExternalLinks(scopedCustomerId),
+      this.store.listFollowups({ status: 'open', customer_id: scopedCustomerId }),
       this.store.listConflicts('open'),
       this.loadCardDavLookup(),
       this.store.getDecryptedIdMap(targetIds),
@@ -351,8 +380,14 @@ export class IcloudSyncService {
   async applySync(
     params: {
       customerId?: string;
+      customerIds?: string[];
+      query?: string;
+      minPremium?: number;
+      onlyWithPhone?: boolean;
+      hasManualSummary?: boolean;
       createMissing?: boolean;
       limit?: number;
+      offset?: number;
       resolutions?: Array<{ conflict_id: string } & ResolveConflictInput>;
       sessionId?: string;
     },
@@ -372,8 +407,18 @@ export class IcloudSyncService {
       resolved.push(res.conflict_id);
     }
 
-    const clampLimit = Math.min(Math.max(Number.isFinite(params.limit) ? Math.trunc(params.limit!) : 10, 1), 50);
-    const previews = await this.previewSync(params.customerId, clampLimit);
+    const requestedLimit = params.limit ?? (params.customerIds?.length ? params.customerIds.length : 10);
+    const clampLimit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.trunc(requestedLimit) : 10, 1), 50);
+    const previews = await this.previewSync({
+      customerId: params.customerId,
+      customerIds: params.customerIds,
+      query: params.query,
+      minPremium: params.minPremium,
+      onlyWithPhone: params.onlyWithPhone,
+      hasManualSummary: params.hasManualSummary,
+      limit: clampLimit,
+      offset: params.offset,
+    });
     const cardLookup = await this.loadCardDavLookup();
 
     const createdCustomers: string[] = [];

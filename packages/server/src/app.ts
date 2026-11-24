@@ -32,6 +32,7 @@ export interface BuildAppOptions {
   remindersBridgeUrl?: string;
   remindersBridgeToken?: string;
   remindersFetch?: typeof fetch;
+  remindersAutoSyncIntervalSec?: number;
   vault?: IdVault;
   logger?: boolean;
 }
@@ -115,6 +116,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<{
     writeEnabled: remindersWriteEnabled,
     fetchImpl: opts.remindersFetch,
   });
+  const autoSyncSec =
+    opts.remindersAutoSyncIntervalSec ?? Number(process.env.REMINDERS_AUTO_SYNC_INTERVAL_SEC ?? 0);
+  if (Number.isFinite(autoSyncSec) && autoSyncSec >= 30) {
+    remindersSync.startAutoSync(Math.trunc(autoSyncSec));
+  }
   const kjgxService = new KjgxWritebackService(store, opts.expectedBundleHash ?? process.env.KJGX_EXPECTED_BUNDLE_HASH ?? '');
 
   const app = Fastify({ logger: opts.logger ?? false });
@@ -140,6 +146,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<{
     app,
     store,
     close: async () => {
+      remindersSync.stopAutoSync();
       await app.close();
       if (pgPoolEnd) await pgPoolEnd();
     },

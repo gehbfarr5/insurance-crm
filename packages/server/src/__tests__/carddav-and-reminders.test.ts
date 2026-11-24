@@ -359,5 +359,85 @@ describe('Direct CardDAV & PyiCloud Reminders Unlocked Integration', () => {
       expect(reopenRes.statusCode).toBe(200);
       expect(remoteReminders.get(createdFu.icloud_reminder_id)?.completed).toBe(false);
     });
+
+    it('supports filtered preview, batch customer_ids CardDAV apply, and auto_sync reminders status', async () => {
+      const batchCardDav = new InMemoryMockCardDavTransport();
+      const batchHandle = await buildApp({
+        storage: 'memory',
+        authMode: 'bearer',
+        agentKeys: { human_web: 'test-web-key', muse: 'test-muse-key' },
+        icloudContactsWriteEnabled: true,
+        icloudRemindersWriteEnabled: true,
+        cardDav: batchCardDav,
+        remindersBridgeUrl: 'http://127.0.0.1:18768',
+        remindersBridgeToken: 'mock-bridge-secret',
+        remindersFetch: mockRemindersFetch,
+        remindersAutoSyncIntervalSec: 300,
+      });
+
+      try {
+        // 1. Filtered preview with min_premium=100000 & offset pagination
+        const page1 = await batchHandle.app.inject({
+          method: 'GET',
+          url: '/api/v1/sync/icloud/preview?min_premium=100000&only_with_phone=true&limit=1&offset=0',
+          headers: { authorization: 'Bearer test-web-key' },
+        });
+        expect(page1.statusCode).toBe(200);
+        expect(page1.json()).toHaveLength(1);
+        expect(page1.json()[0].customer_name).toBe('苏晚晴');
+
+        const page2 = await batchHandle.app.inject({
+          method: 'GET',
+          url: '/api/v1/sync/icloud/preview?min_premium=100000&only_with_phone=true&limit=1&offset=1',
+          headers: { authorization: 'Bearer test-web-key' },
+        });
+        expect(page2.statusCode).toBe(200);
+        expect(page2.json()).toHaveLength(1);
+        expect(page2.json()[0].customer_name).toBe('林致远');
+
+        // 2. Batch apply via customer_ids creates multiple cards cleanly and replays idempotently
+        const batchApply = await batchHandle.app.inject({
+          method: 'POST',
+          url: '/api/v1/sync/icloud/apply',
+          headers: { authorization: 'Bearer test-web-key' },
+          payload: {
+            customer_ids: [DEMO_IDS.cust3, DEMO_IDS.cust4],
+            create_missing: true,
+          },
+        });
+        expect(batchApply.statusCode).toBe(200);
+        const batchData = batchApply.json();
+        expect(batchData.created_customers).toEqual(expect.arrayContaining([DEMO_IDS.cust3, DEMO_IDS.cust4]));
+        expect(batchData.pushed_customers).toEqual(expect.arrayContaining([DEMO_IDS.cust3, DEMO_IDS.cust4]));
+        expect(batchCardDav.cards.size).toBe(2);
+
+        const replayBatch = await batchHandle.app.inject({
+          method: 'POST',
+          url: '/api/v1/sync/icloud/apply',
+          headers: { authorization: 'Bearer test-web-key' },
+          payload: {
+            customer_ids: [DEMO_IDS.cust3, DEMO_IDS.cust4],
+          },
+        });
+        expect(replayBatch.statusCode).toBe(200);
+        expect(replayBatch.json().pushed_customers).toEqual([]);
+
+        // 3. Auto-sync reminders status enabled at 300s
+        const statusRes = await batchHandle.app.inject({
+          method: 'GET',
+          url: '/api/v1/sync/reminders/status',
+          headers: { authorization: 'Bearer test-web-key' },
+        });
+        expect(statusRes.statusCode).toBe(200);
+        expect(statusRes.json().auto_sync).toEqual({
+          enabled: true,
+          interval_sec: 300,
+          last_run_at: null,
+          last_result: null,
+        });
+      } finally {
+        await batchHandle.close();
+      }
+    });
   });
 });

@@ -146,6 +146,17 @@ export interface SyncStatusResponse {
     privacy_fence_mode?: string;
     transport_mode: string;
   };
+  auto_sync?: {
+    enabled: boolean;
+    interval_sec: number;
+    last_run_at: string | null;
+    last_result: {
+      pushed: number;
+      updated: number;
+      pulled_completed: number;
+      errors: string[];
+    } | null;
+  };
 }
 
 export const api = {
@@ -201,14 +212,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ resolution }),
     }),
-  previewIcloudSync: (customerId?: string, limit = 10) => {
+  previewIcloudSync: (params?: {
+    customer_id?: string;
+    query?: string;
+    min_premium?: number;
+    only_with_phone?: boolean;
+    has_manual_summary?: boolean;
+    limit?: number;
+    offset?: number;
+  }) => {
     const sp = new URLSearchParams();
-    if (customerId) sp.set('customer_id', customerId);
-    sp.set('limit', String(limit));
+    if (params?.customer_id) sp.set('customer_id', params.customer_id);
+    if (params?.query) sp.set('query', params.query);
+    if (params?.min_premium != null) sp.set('min_premium', String(params.min_premium));
+    if (params?.only_with_phone) sp.set('only_with_phone', 'true');
+    if (params?.has_manual_summary) sp.set('has_manual_summary', 'true');
+    sp.set('limit', String(params?.limit ?? 10));
+    if (params?.offset) sp.set('offset', String(params.offset));
     return req<IcloudPreviewItem[]>(`api/v1/sync/icloud/preview?${sp.toString()}`);
   },
   applyIcloudSync: (body: {
     customer_id?: string;
+    customer_ids?: string[];
     create_missing?: boolean;
     limit?: number;
     include_reminders?: boolean;

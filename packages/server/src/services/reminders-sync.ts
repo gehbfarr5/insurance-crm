@@ -14,6 +14,16 @@ export class RemindersSyncService {
   private readonly bridgeToken: string | null;
   private readonly _writeEnabled: boolean;
   private readonly fetchFn: typeof fetch;
+  private autoSyncTimer: ReturnType<typeof setInterval> | null = null;
+  private autoSyncIntervalSec = 0;
+  private syncInFlight = false;
+  private lastAutoSyncAt: string | null = null;
+  private lastAutoSyncResult: {
+    pushed: number;
+    updated: number;
+    pulled_completed: number;
+    errors: string[];
+  } | null = null;
 
   constructor(
     private readonly store: CrmStore,
@@ -33,6 +43,52 @@ export class RemindersSyncService {
 
   get writeEnabled(): boolean {
     return this._writeEnabled;
+  }
+
+  startAutoSync(intervalSec: number): void {
+    this.stopAutoSync();
+    if (!Number.isFinite(intervalSec) || intervalSec < 30 || !this.isConfigured || !this._writeEnabled) {
+      return;
+    }
+    this.autoSyncIntervalSec = Math.trunc(intervalSec);
+    const timer = setInterval(() => {
+      void this.runAutoSyncTick();
+    }, this.autoSyncIntervalSec * 1000);
+    timer.unref?.();
+    this.autoSyncTimer = timer;
+  }
+
+  stopAutoSync(): void {
+    if (this.autoSyncTimer) {
+      clearInterval(this.autoSyncTimer);
+      this.autoSyncTimer = null;
+    }
+    this.autoSyncIntervalSec = 0;
+  }
+
+  private async runAutoSyncTick(): Promise<void> {
+    if (this.syncInFlight) return;
+    this.syncInFlight = true;
+    try {
+      const res = await this.syncAll({ actorType: 'sync_daemon', actorId: 'reminders_poller' });
+      this.lastAutoSyncAt = new Date().toISOString();
+      this.lastAutoSyncResult = {
+        pushed: res.pushed,
+        updated: res.updated,
+        pulled_completed: res.pulled_completed,
+        errors: res.errors,
+      };
+    } catch (err) {
+      this.lastAutoSyncAt = new Date().toISOString();
+      this.lastAutoSyncResult = {
+        pushed: 0,
+        updated: 0,
+        pulled_completed: 0,
+        errors: [err instanceof Error ? err.message : String(err)],
+      };
+    } finally {
+      this.syncInFlight = false;
+    }
   }
 
   private async callBridge(
@@ -65,6 +121,13 @@ export class RemindersSyncService {
       };
     }
 
+    const autoSync = {
+      enabled: this.autoSyncTimer !== null,
+      interval_sec: this.autoSyncIntervalSec,
+      last_run_at: this.lastAutoSyncAt,
+      last_result: this.lastAutoSyncResult,
+    };
+
     try {
       const healthRes = await this.callBridge('/health');
       const listsRes = await this.callBridge('/lists');
@@ -75,6 +138,7 @@ export class RemindersSyncService {
           macserver_dependency: false,
           shortcut_sync_available: true,
           write_enabled: this._writeEnabled,
+          auto_sync: autoSync,
           error: `Bridge HTTP health=${healthRes.status} lists=${listsRes.status}`,
         };
       }
@@ -85,6 +149,7 @@ export class RemindersSyncService {
         macserver_dependency: false,
         shortcut_sync_available: true,
         write_enabled: this._writeEnabled,
+        auto_sync: autoSync,
         bridge,
         active_lists: listsPayload.lists ?? [],
       };
@@ -95,6 +160,7 @@ export class RemindersSyncService {
         macserver_dependency: false,
         shortcut_sync_available: true,
         write_enabled: this._writeEnabled,
+        auto_sync: autoSync,
         error: err instanceof Error ? err.message : String(err),
       };
     }

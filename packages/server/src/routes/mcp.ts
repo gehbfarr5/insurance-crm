@@ -196,10 +196,18 @@ export const CRM_MCP_TOOLS: McpToolDef[] = [
   // Sync & Writeback (3)
   {
     name: 'crm_sync_icloud_preview',
-    description: 'Preview 3-Way Diff between CRM and iCloud Contacts/Reminders without mutating data.',
+    description: 'Preview 3-Way Diff and full CRM dossier note for iCloud Contacts/Reminders without mutating data.',
     inputSchema: {
       type: 'object',
-      properties: { customer_id: { type: 'string' } },
+      properties: {
+        customer_id: { type: 'string' },
+        query: { type: 'string' },
+        min_premium: { type: 'number' },
+        only_with_phone: { type: 'boolean' },
+        has_manual_summary: { type: 'boolean' },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+        offset: { type: 'integer', minimum: 0 },
+      },
     },
   },
   {
@@ -209,9 +217,15 @@ export const CRM_MCP_TOOLS: McpToolDef[] = [
       type: 'object',
       properties: {
         customer_id: { type: 'string' },
+        customer_ids: { type: 'array', items: { type: 'string' }, maxItems: 50 },
+        query: { type: 'string' },
+        min_premium: { type: 'number' },
+        only_with_phone: { type: 'boolean' },
+        has_manual_summary: { type: 'boolean' },
         session_id: { type: 'string' },
         create_missing: { type: 'boolean' },
         limit: { type: 'integer', minimum: 1, maximum: 50 },
+        offset: { type: 'integer', minimum: 0 },
         include_reminders: { type: 'boolean' },
         resolutions: { type: 'array', items: { type: 'object' } },
       },
@@ -377,18 +391,31 @@ export function registerMcpRoute(
             data = await store.stageImportDraft(args as never, actor);
             break;
           case 'crm_sync_icloud_preview':
-            data = await icloudSync.previewSync(
-              typeof args.customer_id === 'string' ? args.customer_id : undefined,
-              typeof args.limit === 'number' ? args.limit : undefined,
-            );
+            data = await icloudSync.previewSync({
+              customerId: typeof args.customer_id === 'string' ? args.customer_id : undefined,
+              query: typeof args.query === 'string' ? args.query : undefined,
+              minPremium: typeof args.min_premium === 'number' ? args.min_premium : undefined,
+              onlyWithPhone: typeof args.only_with_phone === 'boolean' ? args.only_with_phone : undefined,
+              hasManualSummary: typeof args.has_manual_summary === 'boolean' ? args.has_manual_summary : undefined,
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+              offset: typeof args.offset === 'number' ? args.offset : undefined,
+            });
             break;
           case 'crm_sync_icloud_apply': {
             const contactRes = await icloudSync.applySync(
               {
                 customerId: typeof args.customer_id === 'string' ? args.customer_id : undefined,
+                customerIds: Array.isArray(args.customer_ids)
+                  ? args.customer_ids.filter((x): x is string => typeof x === 'string')
+                  : undefined,
+                query: typeof args.query === 'string' ? args.query : undefined,
+                minPremium: typeof args.min_premium === 'number' ? args.min_premium : undefined,
+                onlyWithPhone: typeof args.only_with_phone === 'boolean' ? args.only_with_phone : undefined,
+                hasManualSummary: typeof args.has_manual_summary === 'boolean' ? args.has_manual_summary : undefined,
                 sessionId: typeof args.session_id === 'string' ? args.session_id : undefined,
                 createMissing: typeof args.create_missing === 'boolean' ? args.create_missing : undefined,
                 limit: typeof args.limit === 'number' ? args.limit : undefined,
+                offset: typeof args.offset === 'number' ? args.offset : undefined,
                 resolutions: Array.isArray(args.resolutions)
                   ? args.resolutions.map((r) => ({
                       conflict_id: String((r as Record<string, unknown>).conflict_id),

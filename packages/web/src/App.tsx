@@ -66,6 +66,10 @@ export function App() {
   const [staging, setStaging] = useState<ImportStagingItem[]>([]);
   const [icloudPreview, setIcloudPreview] = useState<IcloudPreviewItem[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewQuery, setPreviewQuery] = useState('');
+  const [previewPreset, setPreviewPreset] = useState<'hnw' | 'summary' | 'phone' | 'all'>('hnw');
+  const [previewLimit, setPreviewLimit] = useState<10 | 20 | 50>(10);
+  const [previewOffset, setPreviewOffset] = useState(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
 
@@ -163,6 +167,34 @@ export function App() {
     setNav('detail');
     const d = await api.getCustomer360(id);
     setDetail(d);
+  };
+
+  const loadIcloudPreview = async (overrides?: {
+    offset?: number;
+    preset?: 'hnw' | 'summary' | 'phone' | 'all';
+    limit?: 10 | 20 | 50;
+    query?: string;
+  }) => {
+    const nextOffset = overrides?.offset ?? previewOffset;
+    const nextPreset = overrides?.preset ?? previewPreset;
+    const nextLimit = overrides?.limit ?? previewLimit;
+    const nextQuery = overrides?.query ?? previewQuery;
+    setPreviewLoading(true);
+    try {
+      const items = await api.previewIcloudSync({
+        query: nextQuery.trim() || undefined,
+        min_premium: nextPreset === 'hnw' ? 100000 : undefined,
+        has_manual_summary: nextPreset === 'summary' ? true : undefined,
+        only_with_phone: nextPreset === 'phone' ? true : undefined,
+        limit: nextLimit,
+        offset: nextOffset,
+      });
+      setIcloudPreview(items);
+      setPreviewOffset(nextOffset);
+      return items;
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   const stageByCustomer = new Map<string, string>();
@@ -822,6 +854,14 @@ export function App() {
                       >
                         {syncStatus?.bridge?.write_enabled ? '已放开双向写入' : '只读锁'}
                       </span>
+                      {syncStatus?.auto_sync?.enabled && (
+                        <span className="crm-badge crm-badge-success">
+                          每 {Math.max(1, Math.round(syncStatus.auto_sync.interval_sec / 60))} 分钟自动双向同步
+                          {syncStatus.auto_sync.last_run_at
+                            ? ` · 上次 ${syncStatus.auto_sync.last_run_at.slice(11, 16)}`
+                            : ''}
+                        </span>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -865,21 +905,54 @@ export function App() {
                         type="button"
                         disabled={previewLoading}
                         onClick={async () => {
-                          setPreviewLoading(true);
                           try {
-                            const items = await api.previewIcloudSync(undefined, 10);
-                            setIcloudPreview(items);
+                            const items = await loadIcloudPreview({ offset: 0 });
                             setToast(`已生成 ${items.length} 位客户的 iCloud 通讯录预览`);
                           } catch (err) {
                             setToast(err instanceof Error ? err.message : String(err));
-                          } finally {
-                            setPreviewLoading(false);
                           }
                         }}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer disabled:opacity-60"
                       >
                         {previewLoading ? '正在生成预览...' : '人工触发预览 (只读，不写入 iCloud)'}
                       </button>
+                      {syncStatus?.contacts?.contacts_write_enabled &&
+                        icloudPreview &&
+                        icloudPreview.length > 0 && (
+                          <button
+                            type="button"
+                            disabled={syncBusy || previewLoading}
+                            onClick={async () => {
+                              if (
+                                !window.confirm(
+                                  `确认将当前筛选的 ${icloudPreview.length} 位客户完整档案（含身份证/保单/保费/[#FUP:]，保留原有个人手写备注）写入 iCloud 通讯录？`,
+                                )
+                              ) {
+                                return;
+                              }
+                              setSyncBusy(true);
+                              try {
+                                const res = await api.applyIcloudSync({
+                                  customer_ids: icloudPreview.map((i) => i.customer_id),
+                                  create_missing: true,
+                                  limit: icloudPreview.length,
+                                });
+                                setToast(
+                                  `批量写入完成：新建 ${res.created_customers?.length ?? 0}，更新 ${res.pushed_customers.length}，冲突 ${res.created_conflicts.length}`,
+                                );
+                                await loadIcloudPreview();
+                                await refreshAll();
+                              } catch (err) {
+                                setToast(err instanceof Error ? err.message : String(err));
+                              } finally {
+                                setSyncBusy(false);
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--primary)] text-[var(--primary)] bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] cursor-pointer disabled:opacity-60"
+                          >
+                            批量写入当前页 ({icloudPreview.length} 位客户到 iCloud)
+                          </button>
+                        )}
                       {!syncStatus?.contacts?.contacts_write_enabled && (
                         <button
                           type="button"
@@ -895,6 +968,96 @@ export function App() {
                   <p className="text-xs text-[var(--muted-foreground)]">
                     已取消隐私围栏：将完整身份证号、保单明细、保费资产、科技个险指标、人工备注与近期沟通以幂等 <code>[#CRM-BEGIN]...[#CRM-END]</code> 区块写入 iPhone 通讯录备注，同时完整保留原有个人手写备注、头像与 <code>[#FUP:]</code> 单行跟进摘要。
                   </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                    <input
+                      type="search"
+                      value={previewQuery}
+                      onChange={(e) => setPreviewQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          void loadIcloudPreview({ offset: 0, query: e.currentTarget.value }).catch((err) =>
+                            setToast(err instanceof Error ? err.message : String(err)),
+                          );
+                        }
+                      }}
+                      placeholder="按姓名 / 手机 / 地址筛选..."
+                      className="flex-1 min-w-[180px] px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]"
+                    />
+                    {(
+                      [
+                        ['hnw', '高净值 ≥ 10万'],
+                        ['summary', '有人工备注'],
+                        ['phone', '全部有手机号'],
+                        ['all', '全部客户'],
+                      ] as const
+                    ).map(([presetId, label]) => (
+                      <button
+                        key={presetId}
+                        type="button"
+                        disabled={previewLoading}
+                        onClick={() => {
+                          setPreviewPreset(presetId);
+                          void loadIcloudPreview({ preset: presetId, offset: 0 }).catch((err) =>
+                            setToast(err instanceof Error ? err.message : String(err)),
+                          );
+                        }}
+                        className={`px-2.5 py-1 rounded-full border cursor-pointer ${
+                          previewPreset === presetId
+                            ? 'bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]'
+                            : 'bg-[var(--secondary)] text-[var(--secondary-foreground)] border-[var(--card-border)]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <label className="flex items-center gap-1 text-[var(--muted-foreground)]">
+                      每页
+                      <select
+                        aria-label="预览每页数量"
+                        value={previewLimit}
+                        onChange={(e) => {
+                          const nextLimit = Number(e.target.value) as 10 | 20 | 50;
+                          setPreviewLimit(nextLimit);
+                          void loadIcloudPreview({ limit: nextLimit, offset: 0 }).catch((err) =>
+                            setToast(err instanceof Error ? err.message : String(err)),
+                          );
+                        }}
+                        className="px-2 py-1 rounded border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]"
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                      </select>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={previewLoading || previewOffset === 0}
+                        onClick={() => {
+                          const prevOff = Math.max(0, previewOffset - previewLimit);
+                          void loadIcloudPreview({ offset: prevOff }).catch((err) =>
+                            setToast(err instanceof Error ? err.message : String(err)),
+                          );
+                        }}
+                        className="px-2 py-1 rounded border border-[var(--border)] cursor-pointer disabled:opacity-40"
+                      >
+                        上一页
+                      </button>
+                      <button
+                        type="button"
+                        disabled={previewLoading || (icloudPreview !== null && icloudPreview.length < previewLimit)}
+                        onClick={() => {
+                          const nextOff = previewOffset + previewLimit;
+                          void loadIcloudPreview({ offset: nextOff }).catch((err) =>
+                            setToast(err instanceof Error ? err.message : String(err)),
+                          );
+                        }}
+                        className="px-2 py-1 rounded border border-[var(--border)] cursor-pointer disabled:opacity-40"
+                      >
+                        下一页
+                      </button>
+                    </div>
+                  </div>
                   {icloudPreview && (
                     <div className="grid sm:grid-cols-2 gap-3">
                       {icloudPreview.map((item) => {
@@ -944,8 +1107,7 @@ export function App() {
                                       setToast(
                                         `已写入「${item.customer_name}」到 iCloud 通讯录（pushed=${res.pushed_customers.length}, conflicts=${res.created_conflicts.length}）`,
                                       );
-                                      const refreshed = await api.previewIcloudSync(undefined, 10);
-                                      setIcloudPreview(refreshed);
+                                      await loadIcloudPreview();
                                       await refreshAll();
                                     } catch (err) {
                                       setToast(err instanceof Error ? err.message : String(err));

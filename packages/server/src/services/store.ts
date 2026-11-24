@@ -19,7 +19,7 @@ import {
   type UpsertFollowupInput,
   normalizePhone,
 } from '@insurance-crm/shared';
-import { and, desc, eq, gte, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { IdVault } from '../crypto/id-vault.js';
 import type { DbClient } from '../db/client.js';
 import {
@@ -70,7 +70,11 @@ export interface SearchCustomersParams {
   rapport_tag?: string;
   has_quality_flag?: boolean;
   source_type?: string;
+  only_with_phone?: boolean;
+  has_manual_summary?: boolean;
+  customer_ids?: string[];
   limit?: number;
+  offset?: number;
 }
 
 export interface FilterCandidatesParams {
@@ -242,8 +246,13 @@ export class InMemoryDemoStore implements CrmStore {
   }
 
   async searchCustomers(params: SearchCustomersParams) {
-    const limit = Math.min(Math.max(params.limit ?? 50, 1), 500);
+    const limit = Math.min(Math.max(Number.isFinite(params.limit) ? Math.trunc(params.limit!) : 50, 1), 500);
+    const offset = Math.max(Number.isFinite(params.offset) ? Math.trunc(params.offset!) : 0, 0);
     let list = this.customers.filter((c) => c.status === 'active' && !c.deleted_at);
+    if (params.customer_ids?.length) {
+      const idSet = new Set(params.customer_ids);
+      list = list.filter((c) => idSet.has(c.id));
+    }
     if (params.query?.trim()) {
       const q = params.query.trim().toLowerCase();
       list = list.filter((c) =>
@@ -269,10 +278,17 @@ export class InMemoryDemoStore implements CrmStore {
     if (params.source_type) {
       list = list.filter((c) => c.source_type === params.source_type);
     }
+    if (params.only_with_phone) {
+      list = list.filter((c) => Boolean(c.primary_phone?.trim() || c.phones.some((p) => p.value?.trim())));
+    }
+    if (params.has_manual_summary) {
+      list = list.filter((c) => Boolean(c.manual_summary?.trim()));
+    }
+    list = [...list].sort((a, b) => (b.total_premium ?? -1) - (a.total_premium ?? -1));
     return {
-      customers: list.slice(0, limit),
+      customers: list.slice(offset, offset + limit),
       total: list.length,
-      truncated: list.length > limit,
+      truncated: offset + limit < list.length,
     };
   }
 
@@ -1227,8 +1243,12 @@ export class PostgresStore implements CrmStore {
   ) {}
 
   async searchCustomers(params: SearchCustomersParams) {
-    const limit = Math.min(Math.max(params.limit ?? 50, 1), 500);
+    const limit = Math.min(Math.max(Number.isFinite(params.limit) ? Math.trunc(params.limit!) : 50, 1), 500);
+    const offset = Math.max(Number.isFinite(params.offset) ? Math.trunc(params.offset!) : 0, 0);
     const conds = [eq(customers.status, 'active'), isNull(customers.deleted_at)];
+    if (params.customer_ids?.length) {
+      conds.push(inArray(customers.id, params.customer_ids));
+    }
     if (params.query?.trim()) {
       const q = `%${params.query.trim()}%`;
       conds.push(
@@ -1248,6 +1268,12 @@ export class PostgresStore implements CrmStore {
     if (params.has_quality_flag) {
       conds.push(sql`cardinality(${customers.data_quality_flags}) > 0`);
     }
+    if (params.only_with_phone) {
+      conds.push(and(isNotNull(customers.primary_phone), ne(customers.primary_phone, ''))!);
+    }
+    if (params.has_manual_summary) {
+      conds.push(and(isNotNull(customers.manual_summary), ne(customers.manual_summary, ''))!);
+    }
     const whereClause = and(...conds);
     const [countRows, rows] = await Promise.all([
       this.db.select({ count: sql<number>`count(*)::int` }).from(customers).where(whereClause),
@@ -1255,15 +1281,16 @@ export class PostgresStore implements CrmStore {
         .select()
         .from(customers)
         .where(whereClause)
-        .orderBy(desc(customers.total_premium))
-        .limit(limit),
+        .orderBy(sql`${customers.total_premium} DESC NULLS LAST, ${customers.updated_at} DESC`)
+        .limit(limit)
+        .offset(offset),
     ]);
 
     const total = countRows[0]?.count ?? rows.length;
     return {
       customers: rows.map(mapCustomerRow),
       total,
-      truncated: total > rows.length,
+      truncated: offset + rows.length < total,
     };
   }
 

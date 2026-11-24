@@ -55,7 +55,33 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
     const searchPayload = JSON.parse(searchRes.json().result.content[0].text) as {
       customers: Array<{ name: string }>;
     };
-    expect(searchPayload.customers.map((c) => c.name)).toEqual(['林致远', '苏晚晴']);
+    expect(searchPayload.customers.map((c) => c.name)).toEqual(['苏晚晴', '林致远']);
+  });
+
+  it('orders customers by total_premium descending with null premiums last', async () => {
+    const nullRes = await handle.app.inject({
+      method: 'POST',
+      url: '/api/v1/customers',
+      headers: { authorization: 'Bearer test-web-key' },
+      payload: {
+        name: '零保费测试客户',
+        primary_phone: '13900007777',
+      },
+    });
+    expect(nullRes.statusCode).toBe(201);
+
+    const listRes = await handle.app.inject({
+      method: 'GET',
+      url: '/api/v1/customers?limit=20',
+      headers: { authorization: 'Bearer test-web-key' },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const customers = listRes.json().customers as Array<{ name: string; total_premium: number | null }>;
+    expect(customers[0]!.name).toBe('苏晚晴');
+    expect(customers[0]!.total_premium).toBe(156000);
+    expect(customers[1]!.name).toBe('林致远');
+    expect(customers[customers.length - 1]!.name).toBe('零保费测试客户');
+    expect(customers[customers.length - 1]!.total_premium).toBeNull();
   });
 
   it('enforces optimistic locking (409 / CONFLICT) on concurrent customer updates', async () => {

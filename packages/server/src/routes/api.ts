@@ -115,13 +115,17 @@ export function registerApiRoutes(
 
     v1.get('/customers', async (req) => {
       const q = req.query as Record<string, string | undefined>;
+      const minPremium = q.min_premium !== undefined && q.min_premium !== '' ? Number(q.min_premium) : undefined;
       return store.searchCustomers({
         query: q.query,
-        min_premium: q.min_premium ? Number(q.min_premium) : undefined,
+        min_premium: minPremium !== undefined && Number.isFinite(minPremium) ? minPremium : undefined,
         rapport_tag: q.rapport_tag,
         has_quality_flag: q.has_quality_flag === 'true',
         source_type: q.source_type,
+        only_with_phone: q.only_with_phone === 'true',
+        has_manual_summary: q.has_manual_summary === 'true',
         limit: q.limit ? Number(q.limit) : undefined,
+        offset: q.offset ? Number(q.offset) : undefined,
       });
     });
 
@@ -322,7 +326,16 @@ export function registerApiRoutes(
 
     v1.get('/sync/icloud/preview', async (req) => {
       const q = req.query as Record<string, string | undefined>;
-      return icloudSync.previewSync(q.customer_id, q.limit ? Number(q.limit) : 20);
+      const minPremium = q.min_premium !== undefined && q.min_premium !== '' ? Number(q.min_premium) : undefined;
+      return icloudSync.previewSync({
+        customerId: q.customer_id,
+        query: q.query,
+        minPremium: minPremium !== undefined && Number.isFinite(minPremium) ? minPremium : undefined,
+        onlyWithPhone: q.only_with_phone === 'true',
+        hasManualSummary: q.has_manual_summary === 'true',
+        limit: q.limit ? Number(q.limit) : 20,
+        offset: q.offset ? Number(q.offset) : 0,
+      });
     });
 
     v1.post('/sync/icloud/apply', async (req, reply) => {
@@ -330,9 +343,15 @@ export function registerApiRoutes(
         const body = z
           .object({
             customer_id: z.string().optional(),
+            customer_ids: z.array(z.string()).max(50).optional(),
+            query: z.string().optional(),
+            min_premium: z.number().optional(),
+            only_with_phone: z.boolean().optional(),
+            has_manual_summary: z.boolean().optional(),
             session_id: z.string().optional(),
             create_missing: z.boolean().optional(),
             limit: z.number().int().min(1).max(50).optional(),
+            offset: z.number().int().min(0).optional(),
             include_reminders: z.boolean().optional(),
           })
           .parse(req.body ?? {});
@@ -340,9 +359,15 @@ export function registerApiRoutes(
         const contactRes = await icloudSync.applySync(
           {
             customerId: body.customer_id,
+            customerIds: body.customer_ids,
+            query: body.query,
+            minPremium: body.min_premium,
+            onlyWithPhone: body.only_with_phone,
+            hasManualSummary: body.has_manual_summary,
             sessionId: body.session_id,
             createMissing: body.create_missing,
             limit: body.limit,
+            offset: body.offset,
           },
           actor,
         );
