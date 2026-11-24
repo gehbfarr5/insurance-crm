@@ -5,10 +5,11 @@ import {
   ResolveConflictInputSchema,
   UpdateCustomerInputSchema,
   UpsertFollowupInputSchema,
+  formatMuseReminderPayload,
 } from '@insurance-crm/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { IcloudSyncService } from '../services/icloud-sync.js';
+import { IcloudWriteLockedError, type IcloudSyncService } from '../services/icloud-sync.js';
 import type { KjgxWritebackService } from '../services/kjgx-worker-api.js';
 import {
   type ActorContext,
@@ -49,6 +50,9 @@ export function resolveActorFromRequest(
 }
 
 function handleRouteError(err: unknown, reply: FastifyReply) {
+  if (err instanceof IcloudWriteLockedError) {
+    return reply.code(403).send({ error: err.code, message: err.message });
+  }
   if (err instanceof ConflictError) {
     return reply.code(409).send({ error: err.code, message: err.message, latest: err.latest });
   }
@@ -292,20 +296,117 @@ export function registerApiRoutes(
 
     v1.get('/sync/icloud/preview', async (req) => {
       const q = req.query as Record<string, string | undefined>;
-      return icloudSync.previewSync(q.customer_id);
+      return icloudSync.previewSync(q.customer_id, q.limit ? Number(q.limit) : 20);
     });
 
-    v1.post('/sync/icloud/apply', async (req) => {
-      const body = z
-        .object({
-          customer_id: z.string().optional(),
-          session_id: z.string().optional(),
-        })
-        .parse(req.body ?? {});
-      return icloudSync.applySync(
-        { customerId: body.customer_id, sessionId: body.session_id },
-        actorOf(req),
-      );
+    v1.post('/sync/icloud/apply', async (req, reply) => {
+      try {
+        const body = z
+          .object({
+            customer_id: z.string().optional(),
+            session_id: z.string().optional(),
+          })
+          .parse(req.body ?? {});
+        return await icloudSync.applySync(
+          { customerId: body.customer_id, sessionId: body.session_id },
+          actorOf(req),
+        );
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.get('/sync/reminders/shortcut-pull', async () => {
+      const openFollowups = await store.listFollowups({ status: 'open' });
+      const search = await store.searchCustomers({ limit: 500 });
+      const custMap = new Map(search.customers.map((c) => [c.id, c]));
+
+      const items = [];
+      for (const f of openFollowups) {
+        let cust = custMap.get(f.customer_id);
+        if (!cust) {
+          try {
+            const detail = await store.getCustomer360(f.customer_id);
+            cust = detail.customer;
+            custMap.set(cust.id, cust);
+          } catch {
+            continue;
+          }
+        }
+        const payload = formatMuseReminderPayload(f, cust.name, cust.legacy_group_key);
+        items.push({
+          followup_id: f.id,
+          customer_id: f.customer_id,
+          customer_name: cust.name,
+          list_name: payload.listName,
+          title: payload.title,
+          due_iso: payload.dueDate,
+          priority: payload.priority,
+          notes: payload.notes,
+          status: f.status,
+          version: f.version,
+          icloud_reminder_id: f.icloud_reminder_id,
+          icloud_list_id: f.icloud_list_id ?? payload.listName,
+        });
+      }
+
+      return {
+        count: items.length,
+        mode: 'iphone_shortcut_direct' as const,
+        items,
+      };
+    });
+
+    v1.post('/sync/reminders/shortcut-ack', async (req, reply) => {
+      try {
+        const body = z
+          .object({
+            items: z.array(
+              z.object({
+                followup_id: z.string(),
+                icloud_reminder_id: z.string().nullable().optional(),
+                icloud_list_id: z.string().nullable().optional(),
+                status: z.enum(['open', 'done', 'cancelled']).optional(),
+              }),
+            ),
+          })
+          .parse(req.body);
+
+        const existingList = await store.listFollowups();
+        const byId = new Map(existingList.map((f) => [f.id, f]));
+        const updatedIds: string[] = [];
+
+        for (const ack of body.items) {
+          const existing = byId.get(ack.followup_id);
+          if (!existing) {
+            throw new NotFoundError(`Followup ${ack.followup_id} not found`);
+          }
+          const updated = await store.upsertFollowup(
+            {
+              id: existing.id,
+              customer_id: existing.customer_id,
+              title: existing.title,
+              status: ack.status ?? existing.status,
+              icloud_reminder_id:
+                ack.icloud_reminder_id !== undefined ? ack.icloud_reminder_id : existing.icloud_reminder_id,
+              icloud_list_id:
+                ack.icloud_list_id !== undefined ? ack.icloud_list_id : existing.icloud_list_id,
+              sync_state:
+                ack.icloud_reminder_id || existing.icloud_reminder_id ? 'in_sync' : existing.sync_state,
+              expected_version: existing.version,
+            },
+            actorOf(req),
+          );
+          updatedIds.push(updated.id);
+        }
+
+        return {
+          updated_count: updatedIds.length,
+          updated_ids: updatedIds,
+        };
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
     });
 
     v1.get('/staging', async (req) => {

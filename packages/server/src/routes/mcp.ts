@@ -8,7 +8,7 @@ import {
 } from '@insurance-crm/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { IcloudSyncService } from '../services/icloud-sync.js';
+import { IcloudWriteLockedError, type IcloudSyncService } from '../services/icloud-sync.js';
 import type { KjgxWritebackService } from '../services/kjgx-worker-api.js';
 import { ConflictError, type CrmStore, NotFoundError } from '../services/store.js';
 import { resolveActorFromRequest } from './api.js';
@@ -352,6 +352,7 @@ export function registerMcpRoute(
           case 'crm_sync_icloud_preview':
             data = await icloudSync.previewSync(
               typeof args.customer_id === 'string' ? args.customer_id : undefined,
+              typeof args.limit === 'number' ? args.limit : undefined,
             );
             break;
           case 'crm_sync_icloud_apply':
@@ -390,11 +391,13 @@ export function registerMcpRoute(
         };
       } catch (err) {
         const code =
-          err instanceof ConflictError
-            ? 'CONFLICT'
-            : err instanceof NotFoundError
-              ? 'NOT_FOUND'
-              : 'INVALID_INPUT';
+          err instanceof IcloudWriteLockedError
+            ? 'ICLOUD_WRITE_LOCKED'
+            : err instanceof ConflictError
+              ? 'CONFLICT'
+              : err instanceof NotFoundError
+                ? 'NOT_FOUND'
+                : 'INVALID_INPUT';
         return {
           jsonrpc: '2.0',
           id,

@@ -10,6 +10,7 @@ import {
   type CampaignWithMembers,
   type Customer360Response,
   type DashboardResponse,
+  type IcloudPreviewItem,
   api,
   clearBearerToken,
   getBearerToken,
@@ -62,6 +63,8 @@ export function App() {
   const [kjgxJobs, setKjgxJobs] = useState<KjgxWritebackJob[]>([]);
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
   const [staging, setStaging] = useState<ImportStagingItem[]>([]);
+  const [icloudPreview, setIcloudPreview] = useState<IcloudPreviewItem[] | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterChip, setFilterChip] = useState<'all' | 'hnw' | 'orphan' | 'quality'>('all');
@@ -771,102 +774,177 @@ export function App() {
 
             {/* View 4: Sync Center */}
             {nav === 'sync' && (
-              <section className="split-grid grid grid-cols-2 gap-4">
-                <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold">科技个险回写队列</h2>
-                    <span className="crm-badge crm-badge-primary">L0 OTA 门禁 + 强制回读</span>
+              <div className="space-y-4">
+                <section className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-sm font-semibold">iCloud 通讯录人工预览（保留 [#FUP:] 小行摘要）</h2>
+                      <span className="crm-badge crm-badge-warning">人工触发 · 仅预览 · 写入闸门已锁</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={previewLoading}
+                        onClick={async () => {
+                          setPreviewLoading(true);
+                          try {
+                            const items = await api.previewIcloudSync(undefined, 10);
+                            setIcloudPreview(items);
+                            setToast(`已生成 ${items.length} 位客户的 iCloud 通讯录只读预览（未向 iCloud 写入）`);
+                          } catch (err) {
+                            setToast(err instanceof Error ? err.message : String(err));
+                          } finally {
+                            setPreviewLoading(false);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer disabled:opacity-60"
+                      >
+                        {previewLoading ? '正在生成预览...' : '人工触发预览 (只读，不写入 iCloud)'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled
+                        title="依据当前安全策略，iCloud 通讯录写入闸门处于锁定状态，仅允许人工只读预览"
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] opacity-50 cursor-not-allowed"
+                      >
+                        写入 iCloud（当前锁定）
+                      </button>
+                    </div>
                   </div>
-                  {kjgxJobs.map((j) => (
-                    <div key={j.id} className="p-3 rounded-xl border border-[var(--card-border)] space-y-2 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold">{j.customer_name ?? j.customer_id} · {j.job_type}</span>
-                        <span className={`crm-badge ${j.execution_status === 'succeeded' ? 'crm-badge-success' : 'crm-badge-warning'}`}>
-                          {j.approval_status} / {j.execution_status}
-                        </span>
-                      </div>
-                      <div className="bg-[var(--secondary)] p-2 rounded space-y-1">
-                        {j.field_diff.map((d, i) => (
-                          <div key={i}>
-                            {d.field}: <span className="line-through opacity-70">{d.before}</span> → <strong>{d.after}</strong>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    仅展示经隐私围栏过滤后的通讯录字段及可幂等合并的 <code>[#FUP:]</code> 单行摘要（保留个人备注，严禁身份证号/保单金额外泄）。
+                  </p>
+                  {icloudPreview && (
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {icloudPreview.map((item) => {
+                        const diffCount =
+                          Object.keys(item.diff.toPushToRemote).length +
+                          Object.keys(item.diff.toPullToCrm).length +
+                          item.diff.conflicts.length;
+                        return (
+                          <div
+                            key={item.customer_id}
+                            className="p-3 rounded-xl border border-[var(--card-border)] space-y-2 text-xs"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold">{item.customer_name}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="crm-badge">{item.contact_link_status}</span>
+                                <span className="crm-badge crm-badge-primary">差异字段 {diffCount}</span>
+                              </div>
+                            </div>
+                            <div className="text-[var(--muted-foreground)] space-y-0.5">
+                              <div>电话：{item.sanitized_payload.phones.join(', ') || '-'}</div>
+                              <div>生日：{item.sanitized_payload.birthday ?? '-'}</div>
+                              <div>地址：{item.sanitized_payload.address ?? '-'}</div>
+                            </div>
+                            <div className="bg-[var(--secondary)] p-2 rounded font-mono text-[11px] break-all">
+                              {item.planned_followup_note ?? '(无摘要)'}
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                      {j.approval_status === 'pending_review' && (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await api.approveKjgxJob(j.id);
-                              setToast('已批准回写任务');
-                              await refreshAll();
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer"
-                          >
-                            批准放行
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await api.rejectKjgxJob(j.id);
-                              setToast('已驳回回写任务');
-                              await refreshAll();
-                            }}
-                            className="px-3 py-1.5 rounded-lg border border-[var(--border)] cursor-pointer"
-                          >
-                            驳回
-                          </button>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
+                  )}
+                </section>
 
-                <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
-                  <h2 className="text-sm font-semibold">iPhone 通讯录 &amp; 提醒 3-Way 冲突仲裁</h2>
-                  {conflicts.map((cf) => (
-                    <div key={cf.id} className="p-3 rounded-xl border border-[var(--card-border)] space-y-2 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold">{cf.customer_name ?? cf.entity_id} · {cf.field_name}</span>
-                        <span className={`crm-badge ${cf.status === 'open' ? 'crm-badge-error' : 'crm-badge-success'}`}>
-                          {cf.status}
-                        </span>
-                      </div>
-                      <div className="bg-[var(--secondary)] p-2 rounded space-y-1">
-                        <div>BASE: {String(cf.base_value)}</div>
-                        <div>CRM: <strong>{String(cf.crm_value)}</strong></div>
-                        <div>iPhone: <strong className="text-[var(--primary)]">{String(cf.remote_value)}</strong></div>
-                      </div>
-                      {cf.status === 'open' && (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await api.resolveConflict(cf.id, 'keep_crm');
-                              setToast('已保留 CRM 值并刷新同步基线');
-                              await refreshAll();
-                            }}
-                            className="px-3 py-1.5 rounded-lg border border-[var(--border)] cursor-pointer"
-                          >
-                            保留 CRM
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await api.resolveConflict(cf.id, 'take_remote');
-                              setToast('已采用 iPhone 值更新 CRM 主档');
-                              await refreshAll();
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer"
-                          >
-                            采用 iPhone
-                          </button>
-                        </div>
-                      )}
+                <section className="split-grid grid grid-cols-2 gap-4">
+                  <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-sm font-semibold">科技个险回写队列</h2>
+                      <span className="crm-badge crm-badge-primary">L0 OTA 门禁 + 强制回读</span>
                     </div>
-                  ))}
-                </div>
-              </section>
+                    {kjgxJobs.map((j) => (
+                      <div key={j.id} className="p-3 rounded-xl border border-[var(--card-border)] space-y-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold">{j.customer_name ?? j.customer_id} · {j.job_type}</span>
+                          <span className={`crm-badge ${j.execution_status === 'succeeded' ? 'crm-badge-success' : 'crm-badge-warning'}`}>
+                            {j.approval_status} / {j.execution_status}
+                          </span>
+                        </div>
+                        <div className="bg-[var(--secondary)] p-2 rounded space-y-1">
+                          {j.field_diff.map((d, i) => (
+                            <div key={i}>
+                              {d.field}: <span className="line-through opacity-70">{d.before}</span> → <strong>{d.after}</strong>
+                            </div>
+                          ))}
+                        </div>
+                        {j.approval_status === 'pending_review' && (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await api.approveKjgxJob(j.id);
+                                setToast('已批准回写任务');
+                                await refreshAll();
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer"
+                            >
+                              批准放行
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await api.rejectKjgxJob(j.id);
+                                setToast('已驳回回写任务');
+                                await refreshAll();
+                              }}
+                              className="px-3 py-1.5 rounded-lg border border-[var(--border)] cursor-pointer"
+                            >
+                              驳回
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
+                    <h2 className="text-sm font-semibold">iPhone 通讯录 &amp; 提醒 3-Way 冲突仲裁</h2>
+                    {conflicts.map((cf) => (
+                      <div key={cf.id} className="p-3 rounded-xl border border-[var(--card-border)] space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold">{cf.customer_name ?? cf.entity_id} · {cf.field_name}</span>
+                          <span className={`crm-badge ${cf.status === 'open' ? 'crm-badge-error' : 'crm-badge-success'}`}>
+                            {cf.status}
+                          </span>
+                        </div>
+                        <div className="bg-[var(--secondary)] p-2 rounded space-y-1">
+                          <div>BASE: {String(cf.base_value)}</div>
+                          <div>CRM: <strong>{String(cf.crm_value)}</strong></div>
+                          <div>iPhone: <strong className="text-[var(--primary)]">{String(cf.remote_value)}</strong></div>
+                        </div>
+                        {cf.status === 'open' && (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await api.resolveConflict(cf.id, 'keep_crm');
+                                setToast('已保留 CRM 值并刷新同步基线');
+                                await refreshAll();
+                              }}
+                              className="px-3 py-1.5 rounded-lg border border-[var(--border)] cursor-pointer"
+                            >
+                              保留 CRM
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await api.resolveConflict(cf.id, 'take_remote');
+                                setToast('已采用 iPhone 值更新 CRM 主档');
+                                await refreshAll();
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer"
+                            >
+                              采用 iPhone
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
             )}
 
             {/* View 5: Staging Inbox */}

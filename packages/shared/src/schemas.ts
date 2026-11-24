@@ -239,6 +239,9 @@ export const UpsertFollowupInputSchema = z.object({
   priority: z.enum(VISIT_PRIORITIES).optional(),
   status: z.enum(FOLLOWUP_STATUSES).optional(),
   notes: z.string().nullable().optional(),
+  icloud_reminder_id: z.string().nullable().optional(),
+  icloud_list_id: z.string().nullable().optional(),
+  sync_state: z.enum(['in_sync', 'pending_push', 'conflict', 'unlinked']).optional(),
   expected_version: z.number().int().min(1).optional(),
 });
 export type UpsertFollowupInput = z.infer<typeof UpsertFollowupInputSchema>;

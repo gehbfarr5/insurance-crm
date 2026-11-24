@@ -162,6 +162,8 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
     expect(preview.diff.conflicts[0].field).toBe('address');
     expect(preview.pending_reminders[0].listName).toBe('工作待办 Work');
     expect(preview.sanitized_payload).not.toHaveProperty('id_no_masked');
+    expect(preview.write_gate_status).toBe('locked_preview_only');
+    expect(preview.planned_followup_note).toMatch(/^\[#FUP:[A-Za-z0-9_-]+\] \d{4}-\d{2}-\d{2} \| /);
 
     const resolveRes = await handle.app.inject({
       method: 'POST',
@@ -178,5 +180,81 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
       headers: { authorization: 'Bearer test-web-key' },
     });
     expect(custAfter.json().customer.address).toBe('模拟市示范区测试路 88 号 3号楼');
+  });
+
+  it('hard-locks iCloud Contacts write via REST and MCP while allowing read-only preview', async () => {
+    const applyRes = await handle.app.inject({
+      method: 'POST',
+      url: '/api/v1/sync/icloud/apply',
+      headers: { authorization: 'Bearer test-web-key' },
+      payload: { customer_id: DEMO_IDS.cust1 },
+    });
+    expect(applyRes.statusCode).toBe(403);
+    expect(applyRes.json().error).toBe('ICLOUD_WRITE_LOCKED');
+
+    const mcpApplyRes = await handle.app.inject({
+      method: 'POST',
+      url: '/crm-mcp',
+      headers: { authorization: 'Bearer test-muse-key' },
+      payload: {
+        jsonrpc: '2.0',
+        id: 99,
+        method: 'tools/call',
+        params: { name: 'crm_sync_icloud_apply', arguments: { customer_id: DEMO_IDS.cust1 } },
+      },
+    });
+    expect(mcpApplyRes.statusCode).toBe(200);
+    const mcpBody = mcpApplyRes.json();
+    expect(mcpBody.result.isError).toBe(true);
+    expect(JSON.parse(mcpBody.result.content[0].text).error).toBe('ICLOUD_WRITE_LOCKED');
+  });
+
+  it('supports MacServer-free iPhone Shortcuts Reminders pull and ack persistence', async () => {
+    const pullRes = await handle.app.inject({
+      method: 'GET',
+      url: '/api/v1/sync/reminders/shortcut-pull',
+      headers: { authorization: 'Bearer test-web-key' },
+    });
+    expect(pullRes.statusCode).toBe(200);
+    const pullData = pullRes.json() as {
+      mode: string;
+      count: number;
+      items: Array<{ followup_id: string; list_name: string; title: string }>;
+    };
+    expect(pullData.mode).toBe('iphone_shortcut_direct');
+    expect(pullData.count).toBeGreaterThan(0);
+    expect(pullData.items[0]!.list_name).toBe('工作待办 Work');
+
+    const targetFollowupId = pullData.items[0]!.followup_id;
+    const ackRes = await handle.app.inject({
+      method: 'POST',
+      url: '/api/v1/sync/reminders/shortcut-ack',
+      headers: { authorization: 'Bearer test-web-key' },
+      payload: {
+        items: [
+          {
+            followup_id: targetFollowupId,
+            icloud_reminder_id: 'shortcut-rem-001',
+            icloud_list_id: '工作待办 Work',
+            status: 'done',
+          },
+        ],
+      },
+    });
+    expect(ackRes.statusCode).toBe(200);
+    expect(ackRes.json().updated_count).toBe(1);
+    expect(ackRes.json().updated_ids).toEqual([targetFollowupId]);
+
+    const verifyFollowupsRes = await handle.app.inject({
+      method: 'GET',
+      url: '/api/v1/followups?status=done',
+      headers: { authorization: 'Bearer test-web-key' },
+    });
+    expect(verifyFollowupsRes.statusCode).toBe(200);
+    const doneItem = (verifyFollowupsRes.json() as Array<{ id: string; icloud_reminder_id: string }>).find(
+      (f) => f.id === targetFollowupId,
+    );
+    expect(doneItem).toBeDefined();
+    expect(doneItem?.icloud_reminder_id).toBe('shortcut-rem-001');
   });
 });

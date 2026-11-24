@@ -4,9 +4,23 @@ import {
   type ResolveConflictInput,
   computeThreeWayDiff,
   formatMuseReminderPayload,
+  planCarddavFollowupNote,
   sanitizeCustomerForIcloud,
 } from '@insurance-crm/shared';
 import type { ActorContext, CrmStore } from './store.js';
+
+export class IcloudWriteLockedError extends Error {
+  readonly code = 'ICLOUD_WRITE_LOCKED';
+  constructor(message = 'iCloud 通讯录写入闸门已锁定（仅允许人工预览，当前禁止向 iCloud 写入）') {
+    super(message);
+    this.name = 'IcloudWriteLockedError';
+  }
+}
+
+export interface IcloudSyncOptions {
+  contactsWriteEnabled?: boolean;
+  remindersWriteEnabled?: boolean;
+}
 
 export interface IcloudMcpTransport {
   readonly isLive: boolean;
@@ -64,6 +78,8 @@ export interface IcloudPreviewItem {
   customer_id: string;
   customer_name: string;
   contact_link_status: string;
+  write_gate_status: 'locked_preview_only' | 'enabled';
+  planned_followup_note: string | null;
   sanitized_payload: ReturnType<typeof sanitizeCustomerForIcloud>;
   diff: ReturnType<typeof computeThreeWayDiff>;
   pending_reminders: Array<ReturnType<typeof formatMuseReminderPayload>>;
@@ -71,19 +87,62 @@ export interface IcloudPreviewItem {
 
 const CONTACT_SYNC_FIELDS = ['fullName', 'phones', 'birthday', 'address', 'company'];
 
+const RAPPORT_SAFE_SUMMARY: Record<Customer['rapport_tag'], string> = {
+  friendly: '沟通顺畅',
+  neutral: '中性待观察',
+  cautious: '需留心沟通节奏',
+  paused: '暂缓投入',
+  unassessed: '待初筛跟进',
+};
+
+function sanitizeSingleLine(raw: string | null | undefined, fallback: string, maxLen = 120): string {
+  const cleaned = String(raw ?? '')
+    .replace(/[\r\n|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+  return cleaned || fallback;
+}
+
+function toSafeIsoDate(candidate: string | null | undefined, fallbackDate: string): string {
+  const d = String(candidate ?? '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`))) {
+    return d;
+  }
+  return fallbackDate;
+}
+
+function toSafeMarkerId(raw: string): string {
+  const cleaned = raw.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24);
+  if (cleaned.length >= 3) return cleaned;
+  return `crm_${cleaned.padEnd(3, '0')}`;
+}
+
 export class IcloudSyncService {
   constructor(
     private readonly store: CrmStore,
     private readonly transport: IcloudMcpTransport = new NoopIcloudMcpTransport(),
+    private readonly opts: IcloudSyncOptions = {},
   ) {}
 
-  async previewSync(customerId?: string): Promise<IcloudPreviewItem[]> {
+  get contactsWriteEnabled(): boolean {
+    return this.opts.contactsWriteEnabled === true;
+  }
+
+  get remindersWriteEnabled(): boolean {
+    return this.opts.remindersWriteEnabled === true;
+  }
+
+  async previewSync(customerId?: string, limit = 20): Promise<IcloudPreviewItem[]> {
+    const safeLimit = Math.min(Math.max(Number.isFinite(limit) ? Math.trunc(limit) : 20, 1), 50);
     const targets: Customer[] = [];
+    let singleCustomerLatestInteractionAt: string | null = null;
     if (customerId) {
       const detail = await this.store.getCustomer360(customerId);
       targets.push(detail.customer);
+      singleCustomerLatestInteractionAt = detail.interactions[0]?.occurred_at ?? null;
     } else {
-      const search = await this.store.searchCustomers({ limit: 50 });
+      const search = await this.store.searchCustomers({ limit: safeLimit });
       targets.push(...search.customers);
     }
 
@@ -92,6 +151,11 @@ export class IcloudSyncService {
       this.store.listFollowups({ status: 'open', customer_id: customerId }),
       this.store.listConflicts('open'),
     ]);
+
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const gateStatus: IcloudPreviewItem['write_gate_status'] = this.contactsWriteEnabled
+      ? 'enabled'
+      : 'locked_preview_only';
 
     const items: IcloudPreviewItem[] = [];
     for (const c of targets) {
@@ -108,6 +172,9 @@ export class IcloudSyncService {
             remote.fullName = (remoteContact.name as { full?: string } | undefined)?.full ?? remote.fullName;
             remote.address = remoteContact.address ?? remote.address;
             remote.birthday = remoteContact.birthday ?? remote.birthday;
+            if (typeof remoteContact.note === 'string') {
+              remote.note = remoteContact.note;
+            }
           }
         } catch {
           // Keep stored snapshot if live read temporarily unavailable
@@ -131,14 +198,41 @@ export class IcloudSyncService {
       const diff = computeThreeWayDiff(base, crmComparable, remote, CONTACT_SYNC_FIELDS);
 
       const custFollowups = allFollowups.filter((f: Followup) => f.customer_id === c.id);
+      const primaryFollowup = custFollowups[0];
       const pendingReminders = custFollowups.map((f) =>
         formatMuseReminderPayload(f, c.name, c.legacy_group_key),
       );
+
+      // Compute single-line [#FUP:<id>] preview preserving existing personal notes and privacy fence
+      const existingNote =
+        typeof remote.note === 'string'
+          ? remote.note
+          : typeof base.note === 'string'
+            ? base.note
+            : null;
+      const markerId = toSafeMarkerId(primaryFollowup?.id ?? `crm-${c.id.slice(0, 8)}`);
+      const markerDate = toSafeIsoDate(
+        primaryFollowup?.due_at ?? singleCustomerLatestInteractionAt ?? c.next_followup_at ?? c.updated_at,
+        todayUtc,
+      );
+      const markerKind = primaryFollowup ? '跟进' : '档案';
+      const markerStatus = sanitizeSingleLine(
+        primaryFollowup?.title ?? RAPPORT_SAFE_SUMMARY[c.rapport_tag],
+        '待初筛跟进',
+      );
+      const plannedNote = planCarddavFollowupNote(existingNote, {
+        id: markerId,
+        date: markerDate,
+        kind: markerKind,
+        status: markerStatus,
+      }).note;
 
       items.push({
         customer_id: c.id,
         customer_name: c.name,
         contact_link_status: link?.sync_status ?? 'unlinked',
+        write_gate_status: gateStatus,
+        planned_followup_note: plannedNote,
         sanitized_payload: sanitized,
         diff,
         pending_reminders: pendingReminders,
@@ -155,6 +249,10 @@ export class IcloudSyncService {
     },
     actor: ActorContext,
   ) {
+    if (!this.contactsWriteEnabled) {
+      throw new IcloudWriteLockedError();
+    }
+
     const resolved: string[] = [];
     for (const res of params.resolutions ?? []) {
       await this.store.resolveConflict(

@@ -579,7 +579,10 @@ export class InMemoryDemoStore implements CrmStore {
         status: nextStatus,
         completed_at: nextStatus === 'done' ? existing.completed_at ?? ts : null,
         notes: input.notes !== undefined ? input.notes : existing.notes,
-        sync_state: 'pending_push',
+        icloud_reminder_id:
+          input.icloud_reminder_id !== undefined ? input.icloud_reminder_id : existing.icloud_reminder_id,
+        icloud_list_id: input.icloud_list_id !== undefined ? input.icloud_list_id : existing.icloud_list_id,
+        sync_state: input.sync_state ?? 'pending_push',
         version: existing.version + 1,
         updated_at: ts,
       };
@@ -598,11 +601,11 @@ export class InMemoryDemoStore implements CrmStore {
       status: input.status ?? 'open',
       completed_at: input.status === 'done' ? ts : null,
       notes: input.notes ?? null,
-      icloud_reminder_id: null,
-      icloud_list_id: '工作待办 Work',
+      icloud_reminder_id: input.icloud_reminder_id ?? null,
+      icloud_list_id: input.icloud_list_id ?? '工作待办 Work',
       icloud_etag: null,
       last_synced_payload: null,
-      sync_state: 'pending_push',
+      sync_state: input.sync_state ?? 'pending_push',
       version: 1,
       created_by_actor: actor.actorId,
       created_at: ts,
@@ -1523,7 +1526,10 @@ export class PostgresStore implements CrmStore {
           status: nextStatus,
           completed_at: nextStatus === 'done' ? existing.completed_at ?? new Date() : null,
           notes: input.notes !== undefined ? input.notes : existing.notes,
-          sync_state: 'pending_push',
+          icloud_reminder_id:
+            input.icloud_reminder_id !== undefined ? input.icloud_reminder_id : existing.icloud_reminder_id,
+          icloud_list_id: input.icloud_list_id !== undefined ? input.icloud_list_id : existing.icloud_list_id,
+          sync_state: input.sync_state ?? 'pending_push',
           version: sql`${followups.version} + 1`,
         })
         .where(and(...conds))
@@ -1544,8 +1550,9 @@ export class PostgresStore implements CrmStore {
         status: input.status ?? 'open',
         completed_at: input.status === 'done' ? new Date() : null,
         notes: input.notes ?? null,
-        icloud_list_id: '工作待办 Work',
-        sync_state: 'pending_push',
+        icloud_reminder_id: input.icloud_reminder_id ?? null,
+        icloud_list_id: input.icloud_list_id ?? '工作待办 Work',
+        sync_state: input.sync_state ?? 'pending_push',
         created_by_actor: actor.actorId,
       })
       .returning();

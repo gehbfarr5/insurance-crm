@@ -80,8 +80,43 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface IcloudPreviewItem {
+  customer_id: string;
+  customer_name: string;
+  contact_link_status: string;
+  write_gate_status: 'locked_preview_only' | 'enabled';
+  planned_followup_note: string | null;
+  sanitized_payload: {
+    fullName: string;
+    phones: string[];
+    birthday: string | null;
+    address: string | null;
+    company: string | null;
+    groupNames: string[];
+  };
+  diff: {
+    toPushToRemote: Record<string, unknown>;
+    toPullToCrm: Record<string, unknown>;
+    conflicts: Array<{
+      field: string;
+      baseValue: unknown;
+      crmValue: unknown;
+      remoteValue: unknown;
+    }>;
+    inSync: boolean;
+  };
+  pending_reminders: Array<{
+    listName: string;
+    category: string;
+    title: string;
+    dueDate: string | null;
+    priority: 'High' | 'None';
+    notes: string;
+  }>;
+}
+
 export const api = {
-  getDashboard: () => req<DashboardResponse>('/api/v1/dashboard'),
+  getDashboard: () => req<DashboardResponse>('api/v1/dashboard'),
   searchCustomers: (params?: {
     query?: string;
     min_premium?: number;
@@ -94,9 +129,9 @@ export const api = {
     if (params?.has_quality_flag) sp.set('has_quality_flag', 'true');
     sp.set('limit', String(params?.limit ?? 100));
     const q = sp.toString();
-    return req<{ customers: Customer[]; total: number; truncated: boolean }>(`/api/v1/customers${q ? `?${q}` : ''}`);
+    return req<{ customers: Customer[]; total: number; truncated: boolean }>(`api/v1/customers${q ? `?${q}` : ''}`);
   },
-  getCustomer360: (id: string) => req<Customer360Response>(`/api/v1/customers/${id}`),
+  getCustomer360: (id: string) => req<Customer360Response>(`api/v1/customers/${id}`),
   updateCustomer: (
     id: string,
     body: {
@@ -107,7 +142,7 @@ export const api = {
       rapport_tag?: Customer['rapport_tag'];
       enqueue_kjgx_writeback?: boolean;
     },
-  ) => req<Customer>(`/api/v1/customers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  ) => req<Customer>(`api/v1/customers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   logInteraction: (
     id: string,
     body: {
@@ -117,23 +152,29 @@ export const api = {
       followup_title?: string;
       enqueue_kjgx_visit?: boolean;
     },
-  ) => req(`/api/v1/customers/${id}/interactions`, { method: 'POST', body: JSON.stringify(body) }),
+  ) => req(`api/v1/customers/${id}/interactions`, { method: 'POST', body: JSON.stringify(body) }),
   toggleFollowup: (id: string, status: Followup['status'], expected_version: number) =>
-    req<Followup>(`/api/v1/followups/${id}`, {
+    req<Followup>(`api/v1/followups/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ status, expected_version }),
     }),
-  getCampaigns: () => req<CampaignWithMembers[]>('/api/v1/campaigns'),
-  getKjgxJobs: () => req<KjgxWritebackJob[]>('/api/v1/kjgx/jobs'),
-  approveKjgxJob: (id: string) => req<KjgxWritebackJob>(`/api/v1/kjgx/jobs/${id}/approve`, { method: 'POST', body: '{}' }),
-  rejectKjgxJob: (id: string) => req<KjgxWritebackJob>(`/api/v1/kjgx/jobs/${id}/reject`, { method: 'POST', body: '{}' }),
-  getConflicts: () => req<SyncConflict[]>('/api/v1/sync/conflicts'),
+  getCampaigns: () => req<CampaignWithMembers[]>('api/v1/campaigns'),
+  getKjgxJobs: () => req<KjgxWritebackJob[]>('api/v1/kjgx/jobs'),
+  approveKjgxJob: (id: string) => req<KjgxWritebackJob>(`api/v1/kjgx/jobs/${id}/approve`, { method: 'POST', body: '{}' }),
+  rejectKjgxJob: (id: string) => req<KjgxWritebackJob>(`api/v1/kjgx/jobs/${id}/reject`, { method: 'POST', body: '{}' }),
+  getConflicts: () => req<SyncConflict[]>('api/v1/sync/conflicts'),
   resolveConflict: (id: string, resolution: 'keep_crm' | 'take_remote') =>
-    req<SyncConflict>(`/api/v1/sync/conflicts/${id}/resolve`, {
+    req<SyncConflict>(`api/v1/sync/conflicts/${id}/resolve`, {
       method: 'POST',
       body: JSON.stringify({ resolution }),
     }),
-  getStaging: () => req<ImportStagingItem[]>('/api/v1/staging'),
-  commitStaging: (id: string) => req(`/api/v1/staging/${id}/commit`, { method: 'POST', body: '{}' }),
-  rejectStaging: (id: string) => req(`/api/v1/staging/${id}/reject`, { method: 'POST', body: '{}' }),
+  previewIcloudSync: (customerId?: string, limit = 10) => {
+    const sp = new URLSearchParams();
+    if (customerId) sp.set('customer_id', customerId);
+    sp.set('limit', String(limit));
+    return req<IcloudPreviewItem[]>(`api/v1/sync/icloud/preview?${sp.toString()}`);
+  },
+  getStaging: () => req<ImportStagingItem[]>('api/v1/staging'),
+  commitStaging: (id: string) => req(`api/v1/staging/${id}/commit`, { method: 'POST', body: '{}' }),
+  rejectStaging: (id: string) => req(`api/v1/staging/${id}/reject`, { method: 'POST', body: '{}' }),
 };

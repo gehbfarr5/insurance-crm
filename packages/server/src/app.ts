@@ -24,6 +24,8 @@ export interface BuildAppOptions {
   agentKeys?: Record<string, string>;
   expectedBundleHash?: string;
   icloudTransport?: IcloudMcpTransport;
+  icloudContactsWriteEnabled?: boolean;
+  icloudRemindersWriteEnabled?: boolean;
   vault?: IdVault;
   logger?: boolean;
 }
@@ -82,7 +84,15 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<{
     }
   }
 
-  const icloudSync = new IcloudSyncService(store, icloudTransport);
+  const contactsWriteEnabled =
+    opts.icloudContactsWriteEnabled ?? process.env.ICLOUD_CONTACTS_WRITE_ENABLED === 'true';
+  const remindersWriteEnabled =
+    opts.icloudRemindersWriteEnabled ?? process.env.ICLOUD_REMINDERS_WRITE_ENABLED === 'true';
+
+  const icloudSync = new IcloudSyncService(store, icloudTransport, {
+    contactsWriteEnabled,
+    remindersWriteEnabled,
+  });
   const kjgxService = new KjgxWritebackService(store, opts.expectedBundleHash ?? process.env.KJGX_EXPECTED_BUNDLE_HASH ?? '');
 
   const app = Fastify({ logger: opts.logger ?? false });

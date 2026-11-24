@@ -2,8 +2,8 @@
 /**
  * KJGX Writeback Serial Worker Client (Single Device Exclusive Lock).
  *
- * Usage:
- *   CRM_API_URL=https://crm.example.ts.net:8443 \
+ * Usage (Pixel 3a via Termux SSH port 8022 or local runner):
+ *   CRM_API_URL=https://your-server-ip:8888/crm \
  *   CRM_WORKER_TOKEN=... \
  *   KJGX_DEVICE_ID=pixel3a-kjgx \
  *   KJGX_APP_VERSION=18.5 \
