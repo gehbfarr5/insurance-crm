@@ -1,0 +1,8 @@
+{
+  "name": "保顾客户中枢 CRM",
+  "short_name": "客户中枢",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fb",
+  "theme_color": "#1f4e8c"
+}

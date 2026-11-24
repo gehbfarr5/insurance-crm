@@ -1,0 +1,272 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f7fb;
+  --card: #ffffff;
+  --card-border: #e2e8f0;
+  --border: #cbd5e1;
+  --foreground: #0f172a;
+  --muted-foreground: #475569;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #1e293b;
+  --primary: #1d4ed8;
+  --primary-foreground: #ffffff;
+  --link: #1d4ed8;
+  --success: #15803d;
+  --warning: #b45309;
+  --error: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b1120;
+    --card: #111827;
+    --card-border: #1f2937;
+    --border: #334155;
+    --foreground: #f8fafc;
+    --muted-foreground: #94a3b8;
+    --secondary: #1e293b;
+    --secondary-foreground: #e2e8f0;
+    --primary: #60a5fa;
+    --primary-foreground: #0b1120;
+    --link: #93c5fd;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --error: #f87171;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+}
+
+.crm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 500;
+  border: 1px solid var(--card-border);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  white-space: nowrap;
+}
+.crm-badge-primary {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  color: var(--primary);
+}
+.crm-badge-success {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  color: var(--success);
+}
+.crm-badge-warning {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  color: var(--warning);
+}
+.crm-badge-error {
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+  border-color: color-mix(in srgb, var(--error) 35%, transparent);
+  color: var(--error);
+}
+
+/* Responsive table (container-query driven) */
+.table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(560px, 72vh);
+  container-type: inline-size;
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  background: var(--card);
+}
+.crm-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 13px;
+}
+.crm-table caption {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--card-border);
+  background: var(--card);
+}
+.crm-table thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--secondary);
+}
+.crm-table thead th {
+  padding: 0.625rem 0.75rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--card-border);
+  white-space: nowrap;
+  background: var(--secondary);
+}
+.crm-table tbody th,
+.crm-table tbody td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--card-border);
+  vertical-align: top;
+}
+.crm-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--card);
+  font-weight: 600;
+  min-inline-size: 9.5rem;
+}
+
+@container (width < 600px) {
+  .crm-table,
+  .crm-table thead,
+  .crm-table tbody,
+  .crm-table tr,
+  .crm-table th,
+  .crm-table td {
+    display: block;
+  }
+  .crm-table thead {
+    display: none;
+  }
+  .crm-table {
+    --label-2: "手机 / 拨号";
+    --label-3: "保费与保单";
+    --label-4: "客温 / 资产";
+    --label-5: "活动阶段";
+    --label-6: "双端同步状态";
+    --label-7: "操作";
+  }
+  .crm-table tbody {
+    padding: 0.5rem;
+  }
+  .crm-table tbody tr {
+    margin-block-end: 0.75rem;
+    border: 1px solid var(--card-border);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    background: var(--card);
+  }
+  .crm-table tbody th {
+    position: sticky;
+    inset-block-start: 0;
+    inset-inline-start: auto;
+    z-index: 2;
+    background: var(--secondary);
+    border-bottom: 1px solid var(--card-border);
+  }
+  .crm-table tbody td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px dashed var(--card-border);
+  }
+  .crm-table tbody td:last-child {
+    border-bottom: none;
+  }
+  .crm-table tbody td:nth-child(2)::before { content: var(--label-2) "："; font-weight: 600; color: var(--muted-foreground); margin-inline-end: 0.35rem; font-size: 12px; }
+  .crm-table tbody td:nth-child(3)::before { content: var(--label-3) "："; font-weight: 600; color: var(--muted-foreground); margin-inline-end: 0.35rem; font-size: 12px; }
+  .crm-table tbody td:nth-child(4)::before { content: var(--label-4) "："; font-weight: 600; color: var(--muted-foreground); margin-inline-end: 0.35rem; font-size: 12px; }
+  .crm-table tbody td:nth-child(5)::before { content: var(--label-5) "："; font-weight: 600; color: var(--muted-foreground); margin-inline-end: 0.35rem; font-size: 12px; }
+  .crm-table tbody td:nth-child(6)::before { content: var(--label-6) "："; font-weight: 600; color: var(--muted-foreground); margin-inline-end: 0.35rem; font-size: 12px; }
+  .crm-table tbody td:nth-child(7)::before { content: var(--label-7) "："; font-weight: 600; color: var(--muted-foreground); margin-inline-end: 0.35rem; font-size: 12px; }
+}
+
+/* Native dialog & mandatory overscroll containment */
+dialog {
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--card);
+  color: var(--foreground);
+  max-inline-size: min(92vw, 34rem);
+  inline-size: 100%;
+}
+dialog[open] {
+  display: block;
+}
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+
+/* Accessible Tabs */
+.crm-tablist {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--card-border);
+  gap: 0.25rem;
+}
+.crm-tablist [role="tab"] {
+  position: relative;
+  flex: none;
+  padding: 0.625rem 0.9rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.crm-tablist [role="tab"][aria-selected="true"] {
+  color: var(--primary);
+}
+.crm-tablist [role="tab"][aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  border-block-end: 3px solid var(--primary);
+}
+.tab-panel-inner {
+  padding-top: 1rem;
+}
+
+.device-shell.mobile-mode {
+  max-width: 390px;
+  margin-inline: auto;
+  border: 6px solid var(--border);
+  border-radius: 2rem;
+  overflow: hidden;
+}
+.device-shell.mobile-mode .desktop-only-nav {
+  display: none;
+}
+.device-shell.mobile-mode .mobile-bottom-nav {
+  display: grid;
+}
+.device-shell:not(.mobile-mode) .mobile-bottom-nav {
+  display: none;
+}
+.device-shell.mobile-mode .kpi-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.device-shell.mobile-mode .split-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 720px) {
+  .desktop-only-nav { display: none; }
+  .mobile-bottom-nav { display: grid; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .split-grid { grid-template-columns: minmax(0, 1fr); }
+}

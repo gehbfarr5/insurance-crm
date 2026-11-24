@@ -1,0 +1,25 @@
+{
+  "name": "insurance-crm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.1.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev:server": "CRM_STORAGE=memory AUTH_MODE=dev pnpm --filter @insurance-crm/server dev",
+    "dev:web": "pnpm --filter @insurance-crm/web dev",
+    "build": "pnpm --filter @insurance-crm/shared build && pnpm --filter @insurance-crm/web build && pnpm --filter @insurance-crm/server build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:watch": "vitest",
+    "migrate:dry-run": "node scripts/migrate-legacy-xlsx.mjs --dry-run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

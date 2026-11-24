@@ -1,0 +1,39 @@
+services:
+  crm-postgres:
+    image: postgres:16-alpine
+    container_name: insurance-crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-insurance_crm}
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - crm_pg_data:/var/lib/postgresql/data
+      - ../packages/server/drizzle/0000_initial_schema.sql:/docker-entrypoint-initdb.d/0000_initial_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm} -d ${POSTGRES_DB:-insurance_crm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  crm-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: insurance-crm-app
+    restart: unless-stopped
+    depends_on:
+      crm-postgres:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      CRM_STORAGE: postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-changeme}@crm-postgres:5432/${POSTGRES_DB:-insurance_crm}
+      HOST: 0.0.0.0
+      PORT: 3100
+    ports:
+      - "127.0.0.1:3100:3100"
+
+volumes:
+  crm_pg_data:
