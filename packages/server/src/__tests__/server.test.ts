@@ -257,4 +257,19 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
     expect(doneItem).toBeDefined();
     expect(doneItem?.icloud_reminder_id).toBe('shortcut-rem-001');
   });
+
+  it('reports MacServer-free Reminders bridge status cleanly when unconfigured', async () => {
+    const statusRes = await handle.app.inject({
+      method: 'GET',
+      url: '/api/v1/sync/reminders/status',
+      headers: { authorization: 'Bearer test-web-key' },
+    });
+    expect(statusRes.statusCode).toBe(200);
+    expect(statusRes.json()).toEqual({
+      configured: false,
+      engine: 'none',
+      macserver_dependency: false,
+      shortcut_sync_available: true,
+    });
+  });
 });

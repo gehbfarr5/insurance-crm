@@ -409,6 +409,53 @@ export function registerApiRoutes(
       }
     });
 
+    v1.get('/sync/reminders/status', async (_req, reply) => {
+      const bridgeUrl = process.env.PYICLOUD_REMINDERS_BRIDGE_URL?.replace(/\/+$/, '');
+      const bridgeToken = process.env.PYICLOUD_REMINDERS_BRIDGE_TOKEN;
+      if (!bridgeUrl || !bridgeToken || bridgeToken === 'replace-me') {
+        return {
+          configured: false,
+          engine: 'none',
+          macserver_dependency: false,
+          shortcut_sync_available: true,
+        };
+      }
+
+      try {
+        const headers = { authorization: `Bearer ${bridgeToken}` };
+        const [healthRes, listsRes] = await Promise.all([
+          fetch(`${bridgeUrl}/health`, { headers, signal: AbortSignal.timeout(8000) }),
+          fetch(`${bridgeUrl}/lists`, { headers, signal: AbortSignal.timeout(8000) }),
+        ]);
+        if (!healthRes.ok || !listsRes.ok) {
+          return reply.code(502).send({
+            configured: true,
+            ok: false,
+            macserver_dependency: false,
+            shortcut_sync_available: true,
+            error: `Bridge HTTP health=${healthRes.status} lists=${listsRes.status}`,
+          });
+        }
+        const bridge = (await healthRes.json()) as Record<string, unknown>;
+        const listsPayload = (await listsRes.json()) as { lists?: unknown[] };
+        return {
+          configured: true,
+          macserver_dependency: false,
+          shortcut_sync_available: true,
+          bridge,
+          active_lists: listsPayload.lists ?? [],
+        };
+      } catch (err) {
+        return reply.code(502).send({
+          configured: true,
+          ok: false,
+          macserver_dependency: false,
+          shortcut_sync_available: true,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+
     v1.get('/staging', async (req) => {
       const q = req.query as Record<string, string | undefined>;
       return store.listStaging(q.status);
