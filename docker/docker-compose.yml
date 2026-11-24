@@ -25,6 +25,8 @@ services:
     depends_on:
       crm-postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - ../.env
     environment:

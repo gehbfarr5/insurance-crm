@@ -12,6 +12,27 @@ import type {
   SyncConflict,
 } from '@insurance-crm/shared';
 
+const TOKEN_STORAGE_KEY = 'crm_bearer_token';
+
+export class ApiUnauthorizedError extends Error {
+  constructor(message = '需要访问密钥登录') {
+    super(message);
+    this.name = 'ApiUnauthorizedError';
+  }
+}
+
+export function getBearerToken(): string {
+  return localStorage.getItem(TOKEN_STORAGE_KEY) ?? '';
+}
+
+export function setBearerToken(token: string): void {
+  localStorage.setItem(TOKEN_STORAGE_KEY, token.trim());
+}
+
+export function clearBearerToken(): void {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
 export interface DashboardResponse {
   stats: {
     total_customers: number;
@@ -40,7 +61,7 @@ export type CampaignWithMembers = Campaign & {
 };
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('crm_bearer_token');
+  const token = getBearerToken();
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     ...(init?.headers as Record<string, string> | undefined),
@@ -48,6 +69,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) headers.authorization = `Bearer ${token}`;
 
   const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiUnauthorizedError((body as { message?: string }).message ?? '访问密钥无效或未登录');
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { message?: string; error?: string }).message ?? `HTTP ${res.status}`);
@@ -57,11 +82,17 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getDashboard: () => req<DashboardResponse>('/api/v1/dashboard'),
-  searchCustomers: (params?: { query?: string; min_premium?: number; has_quality_flag?: boolean }) => {
+  searchCustomers: (params?: {
+    query?: string;
+    min_premium?: number;
+    has_quality_flag?: boolean;
+    limit?: number;
+  }) => {
     const sp = new URLSearchParams();
     if (params?.query) sp.set('query', params.query);
     if (params?.min_premium != null) sp.set('min_premium', String(params.min_premium));
     if (params?.has_quality_flag) sp.set('has_quality_flag', 'true');
+    sp.set('limit', String(params?.limit ?? 100));
     const q = sp.toString();
     return req<{ customers: Customer[]; total: number; truncated: boolean }>(`/api/v1/customers${q ? `?${q}` : ''}`);
   },

@@ -19,7 +19,7 @@ import {
   type UpsertFollowupInput,
   normalizePhone,
 } from '@insurance-crm/shared';
-import { and, desc, eq, gte, ilike, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { IdVault } from '../crypto/id-vault.js';
 import type { DbClient } from '../db/client.js';
 import {
@@ -1152,18 +1152,22 @@ export class PostgresStore implements CrmStore {
     if (params.has_quality_flag) {
       conds.push(sql`cardinality(${customers.data_quality_flags}) > 0`);
     }
-    const rows = await this.db
-      .select()
-      .from(customers)
-      .where(and(...conds))
-      .orderBy(desc(customers.total_premium))
-      .limit(limit + 1);
+    const whereClause = and(...conds);
+    const [countRows, rows] = await Promise.all([
+      this.db.select({ count: sql<number>`count(*)::int` }).from(customers).where(whereClause),
+      this.db
+        .select()
+        .from(customers)
+        .where(whereClause)
+        .orderBy(desc(customers.total_premium))
+        .limit(limit),
+    ]);
 
-    const truncated = rows.length > limit;
+    const total = countRows[0]?.count ?? rows.length;
     return {
-      customers: rows.slice(0, limit).map(mapCustomerRow),
-      total: rows.length,
-      truncated,
+      customers: rows.map(mapCustomerRow),
+      total,
+      truncated: total > rows.length,
     };
   }
 
@@ -1740,6 +1744,16 @@ export class PostgresStore implements CrmStore {
     };
   }
 
+  private async loadCustomerNameMap(ids: string[]): Promise<Map<string, string>> {
+    const uniq = Array.from(new Set(ids.filter(Boolean)));
+    if (uniq.length === 0) return new Map();
+    const rows = await this.db
+      .select({ id: customers.id, name: customers.name })
+      .from(customers)
+      .where(inArray(customers.id, uniq));
+    return new Map(rows.map((r) => [r.id, r.name]));
+  }
+
   async listKjgxJobs(params?: { customer_id?: string; execution_status?: string; approval_status?: string }) {
     const conds = [];
     if (params?.customer_id) conds.push(eq(kjgxWritebackJobs.customer_id, params.customer_id));
@@ -1748,7 +1762,8 @@ export class PostgresStore implements CrmStore {
     const rows = conds.length
       ? await this.db.select().from(kjgxWritebackJobs).where(and(...conds)).orderBy(desc(kjgxWritebackJobs.created_at))
       : await this.db.select().from(kjgxWritebackJobs).orderBy(desc(kjgxWritebackJobs.created_at));
-    return rows.map((r) => mapJobRow(r));
+    const nameMap = await this.loadCustomerNameMap(rows.map((r) => r.customer_id));
+    return rows.map((r) => mapJobRow(r, nameMap.get(r.customer_id)));
   }
 
   async getKjgxJob(jobId: string): Promise<KjgxWritebackJob | null> {
@@ -1834,10 +1849,14 @@ export class PostgresStore implements CrmStore {
     const rows = status
       ? await this.db.select().from(syncConflicts).where(eq(syncConflicts.status, status))
       : await this.db.select().from(syncConflicts);
+    const nameMap = await this.loadCustomerNameMap(
+      rows.filter((c) => c.entity_type === 'customer').map((c) => c.entity_id),
+    );
     return rows.map((c) => ({
       id: c.id,
       entity_type: c.entity_type as SyncConflict['entity_type'],
       entity_id: c.entity_id,
+      customer_name: c.entity_type === 'customer' ? nameMap.get(c.entity_id) : undefined,
       source_system: c.source_system as SyncConflict['source_system'],
       field_name: c.field_name,
       base_value: c.base_value,

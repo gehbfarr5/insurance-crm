@@ -11,6 +11,7 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import zlib from 'node:zlib';
 
 function parseArgs(argv) {
@@ -207,7 +208,15 @@ function maskId(i) {
 function normDate(v) {
   const m = cleanStr(v).match(/^(\d{4})[-/.]?(\d{1,2})[-/.]?(\d{1,2})/);
   if (!m) return null;
-  return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (y < 1900 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) {
+    return null;
+  }
+  return `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
 function toNum(v) {
@@ -215,6 +224,11 @@ function toNum(v) {
   if (!t) return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
+}
+
+function toInt(v) {
+  const n = toNum(v);
+  return n === null ? null : Math.round(n);
 }
 
 function mapRapport(priority) {
@@ -298,12 +312,15 @@ async function main() {
     if (conflicts.length > 0) stats.field_conflict_count += 1;
     if (row['客户编号'] || row['DB客户ID']) stats.has_kjgx_key_count += 1;
 
+    const rawAge = toInt(row['年龄']);
+    const validAge = rawAge !== null && rawAge >= 0 && rawAge <= 120 ? rawAge : null;
+
     normalizedRecords.push({
       legacy_group_key: row['客户ID'] || null,
       name: row['姓名'] || '(待补姓名)',
       gender: mapGender(row['性别']),
       birthday: normDate(row['出生日期']),
-      age_override: toNum(row['年龄']),
+      age_override: validAge,
       primary_phone: phone || null,
       address: row['地址'] || null,
       id_raw: idRaw || null,
@@ -311,19 +328,19 @@ async function main() {
       id_no_checksum_ok: ck,
       kjgx_customer_no: row['客户编号'] || null,
       kjgx_db_customer_id: row['DB客户ID'] || null,
-      policy_total: toNum(row['保单数']) ?? 0,
+      policy_total: toInt(row['保单数']) ?? 0,
       total_premium: premium,
       insurer_asset_wan: toNum(row['保险资产(万元)']),
       kjgx_customer_level: row['客户等级'] || null,
       kjgx_temp_level: row['客温层级'] || null,
       kjgx_temp_value: toNum(row['客温值']),
       kjgx_customer_status: row['客户状态'] || null,
-      family_members_count: toNum(row['家庭人数']),
+      family_members_count: toInt(row['家庭人数']),
       kjgx_work_status: row['工作状态'] || null,
       kjgx_asset_index: toNum(row['资产指数']),
-      kjgx_service_num: toNum(row['服务数']),
-      kjgx_visit_num: toNum(row['拜访数']),
-      kjgx_offline_visit_num: toNum(row['离线拜访数']),
+      kjgx_service_num: toInt(row['服务数']),
+      kjgx_visit_num: toInt(row['拜访数']),
+      kjgx_offline_visit_num: toInt(row['离线拜访数']),
       kjgx_kyc_score: toNum(row['KYC']),
       visit_priority: mapPriority(row['跟进优先级']),
       next_followup_at: normDate(row['下次跟进日期']),
@@ -350,10 +367,13 @@ async function main() {
   const hmacKey = Buffer.from(hmacKeyHex, 'hex');
   if (encKey.length !== 32) throw new Error('ID_VAULT_ENC_KEY_HEX must be 64 hex chars');
 
-  const { default: pg } = await import('pg');
+  const require = createRequire(new URL('../packages/server/package.json', import.meta.url));
+  const pgMod = require('pg');
+  const pg = pgMod.default ?? pgMod;
   const pool = new pg.Pool({ connectionString: dbUrl });
   const client = await pool.connect();
 
+  const seenHmacs = new Set();
   let applied = 0;
   try {
     await client.query('BEGIN');
@@ -366,7 +386,13 @@ async function main() {
         const ct = Buffer.concat([cipher.update(r.id_raw, 'utf8'), cipher.final()]);
         encrypted = Buffer.concat([iv, cipher.getAuthTag(), ct]);
         if (!r.id_raw.includes('*')) {
-          hmac = crypto.createHmac('sha256', hmacKey).update(r.id_raw).digest('hex');
+          const candidateHmac = crypto.createHmac('sha256', hmacKey).update(r.id_raw).digest('hex');
+          if (seenHmacs.has(candidateHmac)) {
+            r.data_quality_flags.push('重复证件号待复核');
+          } else {
+            seenHmacs.add(candidateHmac);
+            hmac = candidateHmac;
+          }
         }
       }
 

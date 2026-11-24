@@ -6,10 +6,14 @@ import type {
 } from '@insurance-crm/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ApiUnauthorizedError,
   type CampaignWithMembers,
   type Customer360Response,
   type DashboardResponse,
   api,
+  clearBearerToken,
+  getBearerToken,
+  setBearerToken,
 } from './api.js';
 import { EditCustomerDialog } from './components/EditCustomerDialog.js';
 import { LogInteractionDialog } from './components/LogInteractionDialog.js';
@@ -45,9 +49,13 @@ export function App() {
   const [nav, setNav] = useState<NavTab>('workbench');
   const [mobileMode, setMobileMode] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [loginToken, setLoginToken] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [totalCustomers, setTotalCustomers] = useState(0);
   const [campaigns, setCampaigns] = useState<CampaignWithMembers[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [detail, setDetail] = useState<Customer360Response | null>(null);
@@ -86,10 +94,13 @@ export function App() {
     setDashboard(dash);
     const list = filterChip === 'orphan' ? custRes.customers.filter((c) => c.source_type === '孤儿单') : custRes.customers;
     setCustomers(list);
+    setTotalCustomers(filterChip === 'orphan' ? list.length : custRes.total);
     setCampaigns(camps);
     setKjgxJobs(jobs);
     setConflicts(cfs);
     setStaging(stg);
+    setAuthRequired(false);
+    setLoginError(null);
 
     const targetId = selectedId || custRes.customers[0]?.id;
     if (targetId) {
@@ -100,7 +111,13 @@ export function App() {
   }, [searchQuery, filterChip, selectedId]);
 
   useEffect(() => {
-    void refreshAll().catch((err) => setToast(err instanceof Error ? err.message : String(err)));
+    void refreshAll().catch((err) => {
+      if (err instanceof ApiUnauthorizedError) {
+        setAuthRequired(true);
+      } else {
+        setToast(err instanceof Error ? err.message : String(err));
+      }
+    });
   }, [refreshAll]);
 
   // Listen to beforematch on hidden="until-found" tab panels
@@ -150,6 +167,63 @@ export function App() {
   const pendingSyncBadge =
     (dashboard?.stats.pending_kjgx_jobs ?? 0) + (dashboard?.stats.open_conflicts ?? 0);
 
+  if (authRequired) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-4 bg-[var(--background)] text-[var(--foreground)]">
+        <div className="w-full max-w-sm bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
+          <div className="space-y-1">
+            <h1 className="text-base font-semibold">保顾客户中枢 · 访问密钥登录</h1>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              请输入您的 Bearer Access Key（仅保存在当前浏览器本地存储，不回传明文）
+            </p>
+          </div>
+          {loginError && (
+            <div role="alert" className="p-2.5 rounded-lg border border-[var(--error)] text-xs text-[var(--error)]">
+              {loginError}
+            </div>
+          )}
+          <form
+            className="space-y-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBearerToken(loginToken);
+              try {
+                await refreshAll();
+                setLoginToken('');
+              } catch (err) {
+                clearBearerToken();
+                setLoginError(err instanceof Error ? err.message : '认证失败，请核对密钥');
+              }
+            }}
+          >
+            <div>
+              <label htmlFor="login-access-key" className="block text-xs font-medium mb-1">
+                访问密钥 (Access Key)
+              </label>
+              <input
+                id="login-access-key"
+                type="password"
+                autoComplete="current-password"
+                required
+                autoFocus
+                value={loginToken}
+                onChange={(e) => setLoginToken(e.target.value)}
+                placeholder="输入 human_web 访问密钥"
+                className="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-2 rounded-lg text-xs font-medium bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer"
+            >
+              登录工作台
+            </button>
+          </form>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen p-3 sm:p-5">
       {/* Top Bar */}
@@ -183,6 +257,18 @@ export function App() {
               iPhone (390px)
             </button>
           </div>
+          {getBearerToken() && (
+            <button
+              type="button"
+              onClick={() => {
+                clearBearerToken();
+                setAuthRequired(true);
+              }}
+              className="px-2.5 py-1.5 text-xs rounded-lg border border-[var(--border)] cursor-pointer"
+            >
+              退出登录
+            </button>
+          )}
         </div>
       </header>
 
@@ -434,7 +520,7 @@ export function App() {
                 <div tabIndex={0} role="region" aria-labelledby="customer-table-caption" className="table-wrapper">
                   <table className="crm-table">
                     <caption id="customer-table-caption">
-                      客户主档与两轮筛查列表（窄视口自动切换卡片视图）
+                      客户主档与两轮筛查列表（当前显示 {customers.length} / 共 {totalCustomers} 位客户，窄视口自动切换卡片视图）
                     </caption>
                     <thead>
                       <tr>
