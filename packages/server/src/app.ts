@@ -8,6 +8,7 @@ import { IdVault } from './crypto/id-vault.js';
 import { createDbClient } from './db/client.js';
 import { registerApiRoutes } from './routes/api.js';
 import { registerMcpRoute } from './routes/mcp.js';
+import { type CardDavTransport, DirectIcloudCardDavClient } from './services/carddav-client.js';
 import {
   HttpIcloudMcpTransport,
   type IcloudMcpTransport,
@@ -15,6 +16,7 @@ import {
   NoopIcloudMcpTransport,
 } from './services/icloud-sync.js';
 import { KjgxWritebackService } from './services/kjgx-worker-api.js';
+import { RemindersSyncService } from './services/reminders-sync.js';
 import { type CrmStore, InMemoryDemoStore, PostgresStore } from './services/store.js';
 
 export interface BuildAppOptions {
@@ -24,8 +26,12 @@ export interface BuildAppOptions {
   agentKeys?: Record<string, string>;
   expectedBundleHash?: string;
   icloudTransport?: IcloudMcpTransport;
+  cardDav?: CardDavTransport;
   icloudContactsWriteEnabled?: boolean;
   icloudRemindersWriteEnabled?: boolean;
+  remindersBridgeUrl?: string;
+  remindersBridgeToken?: string;
+  remindersFetch?: typeof fetch;
   vault?: IdVault;
   logger?: boolean;
 }
@@ -89,17 +95,33 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<{
   const remindersWriteEnabled =
     opts.icloudRemindersWriteEnabled ?? process.env.ICLOUD_REMINDERS_WRITE_ENABLED === 'true';
 
+  let cardDav = opts.cardDav;
+  if (!cardDav) {
+    const email = process.env.ICLOUD_ACCOUNT_EMAIL?.trim() ?? '';
+    const appPassword = process.env.ICLOUD_CARDDAV_APP_PASSWORD?.trim() ?? '';
+    if (email && appPassword && !email.includes('example.com') && appPassword !== 'replace-me') {
+      cardDav = new DirectIcloudCardDavClient({ email, appPassword });
+    }
+  }
+
   const icloudSync = new IcloudSyncService(store, icloudTransport, {
     contactsWriteEnabled,
     remindersWriteEnabled,
+    cardDav,
+  });
+  const remindersSync = new RemindersSyncService(store, {
+    bridgeUrl: opts.remindersBridgeUrl ?? process.env.PYICLOUD_REMINDERS_BRIDGE_URL,
+    bridgeToken: opts.remindersBridgeToken ?? process.env.PYICLOUD_REMINDERS_BRIDGE_TOKEN,
+    writeEnabled: remindersWriteEnabled,
+    fetchImpl: opts.remindersFetch,
   });
   const kjgxService = new KjgxWritebackService(store, opts.expectedBundleHash ?? process.env.KJGX_EXPECTED_BUNDLE_HASH ?? '');
 
   const app = Fastify({ logger: opts.logger ?? false });
   await app.register(cors, { origin: true });
 
-  registerApiRoutes(app, { store, icloudSync, kjgxService, authMode, keyMap });
-  registerMcpRoute(app, { store, icloudSync, kjgxService, authMode, keyMap });
+  registerApiRoutes(app, { store, icloudSync, remindersSync, kjgxService, authMode, keyMap });
+  registerMcpRoute(app, { store, icloudSync, remindersSync, kjgxService, authMode, keyMap });
 
   // Serve built React PWA when present
   const __dirname = path.dirname(fileURLToPath(import.meta.url));

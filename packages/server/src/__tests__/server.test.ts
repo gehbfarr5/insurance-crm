@@ -270,6 +270,13 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
       engine: 'none',
       macserver_dependency: false,
       shortcut_sync_available: true,
+      write_enabled: false,
+      contacts: {
+        contacts_write_enabled: false,
+        reminders_write_enabled: false,
+        carddav_connected: false,
+        transport_mode: 'dry_snapshot',
+      },
     });
   });
 });

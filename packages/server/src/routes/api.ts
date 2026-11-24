@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { IcloudWriteLockedError, type IcloudSyncService } from '../services/icloud-sync.js';
 import type { KjgxWritebackService } from '../services/kjgx-worker-api.js';
+import type { RemindersSyncService } from '../services/reminders-sync.js';
 import {
   type ActorContext,
   ConflictError,
@@ -70,12 +71,27 @@ export function registerApiRoutes(
   deps: {
     store: CrmStore;
     icloudSync: IcloudSyncService;
+    remindersSync: RemindersSyncService;
     kjgxService: KjgxWritebackService;
     authMode: 'bearer' | 'dev';
     keyMap: Map<string, string>;
   },
 ) {
-  const { store, icloudSync, kjgxService, authMode, keyMap } = deps;
+  const { store, icloudSync, remindersSync, kjgxService, authMode, keyMap } = deps;
+
+  const autoPushFollowup = async (
+    followup: Awaited<ReturnType<CrmStore['upsertFollowup']>>,
+    actor: ActorContext,
+  ) => {
+    if (!remindersSync.isConfigured || !remindersSync.writeEnabled) return followup;
+    try {
+      const detail = await store.getCustomer360(followup.customer_id);
+      const res = await remindersSync.pushFollowup(followup, detail.customer, actor);
+      return res.followup ?? followup;
+    } catch {
+      return followup;
+    }
+  };
 
   app.get('/health', async () => ({
     ok: true,
@@ -145,7 +161,12 @@ export function registerApiRoutes(
       try {
         const { id } = req.params as { id: string };
         const input = CreateInteractionInputSchema.parse(req.body);
-        return reply.code(201).send(await store.logInteraction(id, input, actorOf(req)));
+        const actor = actorOf(req);
+        const res = await store.logInteraction(id, input, actor);
+        if (res.followup) {
+          res.followup = await autoPushFollowup(res.followup, actor);
+        }
+        return reply.code(201).send(res);
       } catch (err) {
         return handleRouteError(err, reply);
       }
@@ -159,7 +180,10 @@ export function registerApiRoutes(
     v1.post('/followups', async (req, reply) => {
       try {
         const input = UpsertFollowupInputSchema.parse(req.body);
-        return reply.code(201).send(await store.upsertFollowup(input, actorOf(req)));
+        const actor = actorOf(req);
+        const created = await store.upsertFollowup(input, actor);
+        const pushed = await autoPushFollowup(created, actor);
+        return reply.code(201).send(pushed);
       } catch (err) {
         return handleRouteError(err, reply);
       }
@@ -177,7 +201,9 @@ export function registerApiRoutes(
           customer_id: existing.customer_id,
           title: body.title ?? existing.title,
         });
-        return await store.upsertFollowup(input, actorOf(req));
+        const actor = actorOf(req);
+        const updated = await store.upsertFollowup(input, actor);
+        return await autoPushFollowup(updated, actor);
       } catch (err) {
         return handleRouteError(err, reply);
       }
@@ -305,12 +331,26 @@ export function registerApiRoutes(
           .object({
             customer_id: z.string().optional(),
             session_id: z.string().optional(),
+            create_missing: z.boolean().optional(),
+            limit: z.number().int().min(1).max(50).optional(),
+            include_reminders: z.boolean().optional(),
           })
           .parse(req.body ?? {});
-        return await icloudSync.applySync(
-          { customerId: body.customer_id, sessionId: body.session_id },
-          actorOf(req),
+        const actor = actorOf(req);
+        const contactRes = await icloudSync.applySync(
+          {
+            customerId: body.customer_id,
+            sessionId: body.session_id,
+            createMissing: body.create_missing,
+            limit: body.limit,
+          },
+          actor,
         );
+        if (body.include_reminders === true) {
+          const remindersSyncRes = await remindersSync.syncAll(actor);
+          return { ...contactRes, reminders_sync: remindersSyncRes };
+        }
+        return contactRes;
       } catch (err) {
         return handleRouteError(err, reply);
       }
@@ -410,49 +450,22 @@ export function registerApiRoutes(
     });
 
     v1.get('/sync/reminders/status', async (_req, reply) => {
-      const bridgeUrl = process.env.PYICLOUD_REMINDERS_BRIDGE_URL?.replace(/\/+$/, '');
-      const bridgeToken = process.env.PYICLOUD_REMINDERS_BRIDGE_TOKEN;
-      if (!bridgeUrl || !bridgeToken || bridgeToken === 'replace-me') {
-        return {
-          configured: false,
-          engine: 'none',
-          macserver_dependency: false,
-          shortcut_sync_available: true,
-        };
+      const status = await remindersSync.getStatus();
+      const base = {
+        ...status,
+        contacts: icloudSync.status,
+      };
+      if (status.configured === true && status.ok === false) {
+        return reply.code(502).send(base);
       }
+      return base;
+    });
 
+    v1.post('/sync/reminders/sync', async (req, reply) => {
       try {
-        const headers = { authorization: `Bearer ${bridgeToken}` };
-        const [healthRes, listsRes] = await Promise.all([
-          fetch(`${bridgeUrl}/health`, { headers, signal: AbortSignal.timeout(8000) }),
-          fetch(`${bridgeUrl}/lists`, { headers, signal: AbortSignal.timeout(8000) }),
-        ]);
-        if (!healthRes.ok || !listsRes.ok) {
-          return reply.code(502).send({
-            configured: true,
-            ok: false,
-            macserver_dependency: false,
-            shortcut_sync_available: true,
-            error: `Bridge HTTP health=${healthRes.status} lists=${listsRes.status}`,
-          });
-        }
-        const bridge = (await healthRes.json()) as Record<string, unknown>;
-        const listsPayload = (await listsRes.json()) as { lists?: unknown[] };
-        return {
-          configured: true,
-          macserver_dependency: false,
-          shortcut_sync_available: true,
-          bridge,
-          active_lists: listsPayload.lists ?? [],
-        };
+        return await remindersSync.syncAll(actorOf(req));
       } catch (err) {
-        return reply.code(502).send({
-          configured: true,
-          ok: false,
-          macserver_dependency: false,
-          shortcut_sync_available: true,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        return handleRouteError(err, reply);
       }
     });
 

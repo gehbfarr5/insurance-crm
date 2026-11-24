@@ -115,6 +115,30 @@ export interface IcloudPreviewItem {
   }>;
 }
 
+export interface SyncStatusResponse {
+  configured: boolean;
+  ok?: boolean;
+  macserver_dependency: boolean;
+  shortcut_sync_available: boolean;
+  write_enabled?: boolean;
+  bridge?: {
+    status: string;
+    engine: string;
+    authenticated: boolean;
+    trusted: boolean;
+    active_lists_count: number;
+    write_enabled: boolean;
+    cookie_min_remaining_days: number | null;
+    hsa_trust_remaining_days: number | null;
+  };
+  contacts?: {
+    contacts_write_enabled: boolean;
+    reminders_write_enabled: boolean;
+    carddav_connected: boolean;
+    transport_mode: string;
+  };
+}
+
 export const api = {
   getDashboard: () => req<DashboardResponse>('api/v1/dashboard'),
   searchCustomers: (params?: {
@@ -174,6 +198,36 @@ export const api = {
     sp.set('limit', String(limit));
     return req<IcloudPreviewItem[]>(`api/v1/sync/icloud/preview?${sp.toString()}`);
   },
+  applyIcloudSync: (body: {
+    customer_id?: string;
+    create_missing?: boolean;
+    limit?: number;
+    include_reminders?: boolean;
+  }) =>
+    req<{
+      mode: string;
+      created_customers?: string[];
+      pushed_customers: string[];
+      pulled_customers: string[];
+      created_conflicts: string[];
+      skipped_unmatched?: string[];
+    }>('api/v1/sync/icloud/apply', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getSyncStatus: () => req<SyncStatusResponse>('api/v1/sync/reminders/status'),
+  syncRemindersNow: () =>
+    req<{
+      ok: boolean;
+      mode: string;
+      pushed: number;
+      updated: number;
+      pulled_completed: number;
+      errors: string[];
+    }>('api/v1/sync/reminders/sync', {
+      method: 'POST',
+      body: '{}',
+    }),
   getStaging: () => req<ImportStagingItem[]>('api/v1/staging'),
   commitStaging: (id: string) => req(`api/v1/staging/${id}/commit`, { method: 'POST', body: '{}' }),
   rejectStaging: (id: string) => req(`api/v1/staging/${id}/reject`, { method: 'POST', body: '{}' }),

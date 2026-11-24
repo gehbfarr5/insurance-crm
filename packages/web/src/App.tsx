@@ -11,6 +11,7 @@ import {
   type Customer360Response,
   type DashboardResponse,
   type IcloudPreviewItem,
+  type SyncStatusResponse,
   api,
   clearBearerToken,
   getBearerToken,
@@ -65,6 +66,8 @@ export function App() {
   const [staging, setStaging] = useState<ImportStagingItem[]>([]);
   const [icloudPreview, setIcloudPreview] = useState<IcloudPreviewItem[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterChip, setFilterChip] = useState<'all' | 'hnw' | 'orphan' | 'quality'>('all');
@@ -82,7 +85,7 @@ export function App() {
   });
 
   const refreshAll = useCallback(async () => {
-    const [dash, custRes, camps, jobs, cfs, stg] = await Promise.all([
+    const [dash, custRes, camps, jobs, cfs, stg, st] = await Promise.all([
       api.getDashboard(),
       api.searchCustomers({
         query: searchQuery || undefined,
@@ -93,6 +96,7 @@ export function App() {
       api.getKjgxJobs(),
       api.getConflicts(),
       api.getStaging(),
+      api.getSyncStatus().catch(() => null),
     ]);
     setDashboard(dash);
     const list = filterChip === 'orphan' ? custRes.customers.filter((c) => c.source_type === '孤儿单') : custRes.customers;
@@ -102,6 +106,7 @@ export function App() {
     setKjgxJobs(jobs);
     setConflicts(cfs);
     setStaging(stg);
+    if (st) setSyncStatus(st);
     setAuthRequired(false);
     setLoginError(null);
 
@@ -761,10 +766,36 @@ export function App() {
                         <div>客户编号：{detail.customer.kjgx_customer_no ?? '(待回写生成)'}</div>
                         <div>DB ID：{detail.customer.kjgx_db_customer_id ?? '-'}</div>
                       </div>
-                      <div className="p-3 rounded-lg border border-[var(--card-border)] space-y-1">
+                      <div className="p-3 rounded-lg border border-[var(--card-border)] space-y-2">
                         <div className="font-semibold">iCloud 映射</div>
                         <div>外部链路数：{detail.external_links.length}</div>
                         <div>未解决冲突：{detail.open_conflicts.length}</div>
+                        {syncStatus?.contacts?.contacts_write_enabled && (
+                          <button
+                            type="button"
+                            disabled={syncBusy}
+                            onClick={async () => {
+                              setSyncBusy(true);
+                              try {
+                                const res = await api.applyIcloudSync({
+                                  customer_id: detail.customer.id,
+                                  create_missing: true,
+                                });
+                                setToast(
+                                  `已同步「${detail.customer.name}」至 iCloud 通讯录（mode=${res.mode}, pushed=${res.pushed_customers.length}）`,
+                                );
+                                await refreshAll();
+                              } catch (err) {
+                                setToast(err instanceof Error ? err.message : String(err));
+                              } finally {
+                                setSyncBusy(false);
+                              }
+                            }}
+                            className="mt-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer disabled:opacity-60"
+                          >
+                            同步此客户到 iCloud 通讯录
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -778,8 +809,56 @@ export function App() {
                 <section className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-sm font-semibold">iCloud 提醒事项（CloudKit 直连 · 无 MacServer）</h2>
+                      <span
+                        className={`crm-badge ${syncStatus?.bridge?.authenticated ? 'crm-badge-success' : 'crm-badge-warning'}`}
+                      >
+                        {syncStatus?.bridge?.authenticated
+                          ? `在线 · ${syncStatus.bridge.active_lists_count} 个列表 · Cookie 余 ${syncStatus.bridge.cookie_min_remaining_days ?? '-'} 天`
+                          : '未连接 / 待鉴权'}
+                      </span>
+                      <span
+                        className={`crm-badge ${syncStatus?.bridge?.write_enabled ? 'crm-badge-primary' : 'crm-badge-warning'}`}
+                      >
+                        {syncStatus?.bridge?.write_enabled ? '已放开双向写入' : '只读锁'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={syncBusy || !syncStatus?.bridge?.write_enabled}
+                      onClick={async () => {
+                        setSyncBusy(true);
+                        try {
+                          const res = await api.syncRemindersNow();
+                          setToast(
+                            `提醒事项双向同步完成：新增 ${res.pushed}，更新 ${res.updated}，回拉完成 ${res.pulled_completed}`,
+                          );
+                          await refreshAll();
+                        } catch (err) {
+                          setToast(err instanceof Error ? err.message : String(err));
+                        } finally {
+                          setSyncBusy(false);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer disabled:opacity-50"
+                    >
+                      立即双向同步提醒事项
+                    </button>
+                  </div>
+                </section>
+
+                <section className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-sm font-semibold">iCloud 通讯录人工预览（保留 [#FUP:] 小行摘要）</h2>
-                      <span className="crm-badge crm-badge-warning">人工触发 · 仅预览 · 写入闸门已锁</span>
+                      {syncStatus?.contacts?.contacts_write_enabled ? (
+                        <span className="crm-badge crm-badge-success">
+                          已放开写入 · 人工触发 · 保留 [#FUP:]
+                          {syncStatus.contacts.carddav_connected ? ' (CardDAV 直连)' : ''}
+                        </span>
+                      ) : (
+                        <span className="crm-badge crm-badge-warning">人工触发 · 仅预览 · 写入闸门已锁</span>
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
@@ -790,7 +869,7 @@ export function App() {
                           try {
                             const items = await api.previewIcloudSync(undefined, 10);
                             setIcloudPreview(items);
-                            setToast(`已生成 ${items.length} 位客户的 iCloud 通讯录只读预览（未向 iCloud 写入）`);
+                            setToast(`已生成 ${items.length} 位客户的 iCloud 通讯录预览`);
                           } catch (err) {
                             setToast(err instanceof Error ? err.message : String(err));
                           } finally {
@@ -801,14 +880,16 @@ export function App() {
                       >
                         {previewLoading ? '正在生成预览...' : '人工触发预览 (只读，不写入 iCloud)'}
                       </button>
-                      <button
-                        type="button"
-                        disabled
-                        title="依据当前安全策略，iCloud 通讯录写入闸门处于锁定状态，仅允许人工只读预览"
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] opacity-50 cursor-not-allowed"
-                      >
-                        写入 iCloud（当前锁定）
-                      </button>
+                      {!syncStatus?.contacts?.contacts_write_enabled && (
+                        <button
+                          type="button"
+                          disabled
+                          title="依据当前安全策略，iCloud 通讯录写入闸门处于锁定状态，仅允许人工只读预览"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] opacity-50 cursor-not-allowed"
+                        >
+                          写入 iCloud（当前锁定）
+                        </button>
+                      )}
                     </div>
                   </div>
                   <p className="text-xs text-[var(--muted-foreground)]">
@@ -841,6 +922,36 @@ export function App() {
                             <div className="bg-[var(--secondary)] p-2 rounded font-mono text-[11px] break-all">
                               {item.planned_followup_note ?? '(无摘要)'}
                             </div>
+                            {syncStatus?.contacts?.contacts_write_enabled && (
+                              <div className="pt-1">
+                                <button
+                                  type="button"
+                                  disabled={syncBusy}
+                                  onClick={async () => {
+                                    setSyncBusy(true);
+                                    try {
+                                      const res = await api.applyIcloudSync({
+                                        customer_id: item.customer_id,
+                                        create_missing: true,
+                                      });
+                                      setToast(
+                                        `已写入「${item.customer_name}」到 iCloud 通讯录（pushed=${res.pushed_customers.length}, conflicts=${res.created_conflicts.length}）`,
+                                      );
+                                      const refreshed = await api.previewIcloudSync(undefined, 10);
+                                      setIcloudPreview(refreshed);
+                                      await refreshAll();
+                                    } catch (err) {
+                                      setToast(err instanceof Error ? err.message : String(err));
+                                    } finally {
+                                      setSyncBusy(false);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-md text-xs font-medium bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer disabled:opacity-60"
+                                >
+                                  写入此客户到 iCloud 通讯录
+                                </button>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

@@ -53,8 +53,8 @@ def extract_cookie_ttls(cookies) -> tuple[float | None, float | None]:
     return (min(tracked_days) if tracked_days else None, hsa_days)
 
 
-def serialize_reminder(rem) -> dict:
-    return {
+def serialize_reminder(rem, list_title: str | None = None) -> dict:
+    payload = {
         "id": rem.id,
         "list_id": rem.list_id,
         "title": rem.title,
@@ -64,6 +64,9 @@ def serialize_reminder(rem) -> dict:
         "priority": getattr(rem, "priority", 0),
         "flagged": bool(getattr(rem, "flagged", False)),
     }
+    if list_title is not None:
+        payload["list_title"] = list_title
+    return payload
 
 
 class BridgeConfig:
@@ -195,7 +198,7 @@ class CloudKitRemindersState:
             return 200, {
                 "list_id": target.id,
                 "list_title": target.title,
-                "reminders": [serialize_reminder(r) for r in res.reminders],
+                "reminders": [serialize_reminder(r, target.title) for r in res.reminders],
             }
 
     def _check_write_gate(self, list_title: str | None) -> tuple[int, dict] | None:
@@ -223,6 +226,10 @@ class CloudKitRemindersState:
         due_dt = None
         if body.get("due_date"):
             due_dt = datetime.fromisoformat(str(body["due_date"]))
+        all_day = bool(body.get("all_day", False))
+        time_zone = body.get("time_zone")
+        if due_dt is not None and not all_day and not time_zone:
+            time_zone = "Asia/Shanghai"
 
         with self.lock:
             api = self._get_api_locked()
@@ -243,8 +250,10 @@ class CloudKitRemindersState:
                 due_date=due_dt,
                 priority=int(body.get("priority") or 0),
                 flagged=bool(body.get("flagged", False)),
+                all_day=all_day,
+                time_zone=time_zone,
             )
-            return 201, serialize_reminder(created)
+            return 201, serialize_reminder(created, target.title)
 
     def update_reminder(self, reminder_id: str, body: dict) -> tuple[int, dict]:
         gate_err = self._check_write_gate(None)
@@ -267,8 +276,15 @@ class CloudKitRemindersState:
                 rem.completed = bool(body["completed"])
             if "priority" in body and body["priority"] is not None:
                 rem.priority = int(body["priority"])
+            if "flagged" in body and body["flagged"] is not None:
+                rem.flagged = bool(body["flagged"])
+            if "due_date" in body:
+                if body["due_date"] is None:
+                    rem.due_date = None
+                else:
+                    rem.due_date = datetime.fromisoformat(str(body["due_date"]))
             api.reminders.update(rem)
-            return 200, serialize_reminder(rem)
+            return 200, serialize_reminder(rem, list_obj.title)
 
     def delete_reminder(self, reminder_id: str) -> tuple[int, dict]:
         gate_err = self._check_write_gate(None)
@@ -415,7 +431,31 @@ def run_self_test() -> int:
     code_read, err_read = state.list_reminders("Unauthorized List", False)
     assert code_read == 403 and err_read["error"] == "LIST_NOT_IN_READ_ALLOWLIST"
 
-    print(json.dumps({"ok": True, "mode": "service_self_test", "write_lock": "verified", "auth": "verified"}))
+    cfg_unlocked = BridgeConfig(
+        {
+            "PYICLOUD_BRIDGE_TOKEN": "unit-test-secret",
+            "PYICLOUD_APPLE_ID": "test@example.com",
+            "PYICLOUD_COOKIE_DIR": "/tmp/nonexistent",
+            "PYICLOUD_READ_ALLOWED_LISTS": "工作待办 Work,MUSE-R1-04-SYNTEST",
+            "PYICLOUD_WRITE_ALLOWED_LISTS": "MUSE-R1-04-SYNTEST",
+            "PYICLOUD_REMINDERS_WRITE_ENABLED": "true",
+        }
+    )
+    state_unlocked = CloudKitRemindersState(cfg_unlocked)
+    code_unlisted, err_unlisted = state_unlocked.create_reminder({"list_title": "工作待办 Work", "title": "x"})
+    assert code_unlisted == 403 and err_unlisted["error"] == "LIST_NOT_IN_WRITE_ALLOWLIST"
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "mode": "service_self_test",
+                "write_lock": "verified",
+                "allowlist": "verified",
+                "auth": "verified",
+            }
+        )
+    )
     return 0
 
 

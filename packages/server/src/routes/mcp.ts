@@ -10,6 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { IcloudWriteLockedError, type IcloudSyncService } from '../services/icloud-sync.js';
 import type { KjgxWritebackService } from '../services/kjgx-worker-api.js';
+import type { RemindersSyncService } from '../services/reminders-sync.js';
 import { ConflictError, type CrmStore, NotFoundError } from '../services/store.js';
 import { resolveActorFromRequest } from './api.js';
 
@@ -203,12 +204,15 @@ export const CRM_MCP_TOOLS: McpToolDef[] = [
   },
   {
     name: 'crm_sync_icloud_apply',
-    description: 'Apply safe iCloud sync updates with ETag checks and explicit conflict resolutions.',
+    description: 'Apply safe iCloud sync updates with ETag checks, CardDAV writeback, optional Reminders sync, and conflict resolutions.',
     inputSchema: {
       type: 'object',
       properties: {
         customer_id: { type: 'string' },
         session_id: { type: 'string' },
+        create_missing: { type: 'boolean' },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+        include_reminders: { type: 'boolean' },
         resolutions: { type: 'array', items: { type: 'object' } },
       },
     },
@@ -242,12 +246,13 @@ export function registerMcpRoute(
   deps: {
     store: CrmStore;
     icloudSync: IcloudSyncService;
+    remindersSync: RemindersSyncService;
     kjgxService: KjgxWritebackService;
     authMode: 'bearer' | 'dev';
     keyMap: Map<string, string>;
   },
 ) {
-  const { store, icloudSync, kjgxService, authMode, keyMap } = deps;
+  const { store, icloudSync, remindersSync, kjgxService, authMode, keyMap } = deps;
 
   app.post('/crm-mcp', async (req, reply) => {
     const actor = resolveActorFromRequest(req, authMode, keyMap);
@@ -332,12 +337,34 @@ export function registerMcpRoute(
           }
           case 'crm_log_interaction': {
             const customerId = String(args.customer_id ?? '');
-            data = await store.logInteraction(customerId, CreateInteractionInputSchema.parse(args), actor);
+            const logRes = await store.logInteraction(customerId, CreateInteractionInputSchema.parse(args), actor);
+            if (logRes.followup && remindersSync.isConfigured && remindersSync.writeEnabled) {
+              try {
+                const detail = await store.getCustomer360(logRes.followup.customer_id);
+                const pushRes = await remindersSync.pushFollowup(logRes.followup, detail.customer, actor);
+                if (pushRes.followup) logRes.followup = pushRes.followup;
+              } catch {
+                // Non-blocking sync hook
+              }
+            }
+            data = logRes;
             break;
           }
-          case 'crm_upsert_followup':
-            data = await store.upsertFollowup(UpsertFollowupInputSchema.parse(args), actor);
+          case 'crm_upsert_followup': {
+            const fu = await store.upsertFollowup(UpsertFollowupInputSchema.parse(args), actor);
+            if (remindersSync.isConfigured && remindersSync.writeEnabled) {
+              try {
+                const detail = await store.getCustomer360(fu.customer_id);
+                const pushRes = await remindersSync.pushFollowup(fu, detail.customer, actor);
+                data = pushRes.followup ?? fu;
+              } catch {
+                data = fu;
+              }
+            } else {
+              data = fu;
+            }
             break;
+          }
           case 'crm_update_campaign_member':
             data = await store.updateCampaignMember(
               String(args.campaign_id ?? ''),
@@ -355,11 +382,13 @@ export function registerMcpRoute(
               typeof args.limit === 'number' ? args.limit : undefined,
             );
             break;
-          case 'crm_sync_icloud_apply':
-            data = await icloudSync.applySync(
+          case 'crm_sync_icloud_apply': {
+            const contactRes = await icloudSync.applySync(
               {
                 customerId: typeof args.customer_id === 'string' ? args.customer_id : undefined,
                 sessionId: typeof args.session_id === 'string' ? args.session_id : undefined,
+                createMissing: typeof args.create_missing === 'boolean' ? args.create_missing : undefined,
+                limit: typeof args.limit === 'number' ? args.limit : undefined,
                 resolutions: Array.isArray(args.resolutions)
                   ? args.resolutions.map((r) => ({
                       conflict_id: String((r as Record<string, unknown>).conflict_id),
@@ -369,7 +398,14 @@ export function registerMcpRoute(
               },
               actor,
             );
+            if (args.include_reminders === true) {
+              const remindersSyncRes = await remindersSync.syncAll(actor);
+              data = { ...contactRes, reminders_sync: remindersSyncRes };
+            } else {
+              data = contactRes;
+            }
             break;
+          }
           case 'crm_kjgx_enqueue_writeback':
             data = await kjgxService.enqueue(EnqueueKjgxJobInputSchema.parse(args), actor);
             break;
