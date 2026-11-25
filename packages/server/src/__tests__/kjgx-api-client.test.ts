@@ -457,5 +457,64 @@ describe('KjgxDirectApiClient & KjgxWritebackService', () => {
     expect(lastLoginInner.pwd).toBe(sm4CbcEncrypt('SamplePass!123'));
     expect(lastLoginInner.mobilePhone).toBe('13800138000');
     expect(lastLoginInner.mobileCheck).toBe('654321');
+
+    // Managed devicesn takes precedence over legacy heartbeat devicesn stored in DB
+    await svcManaged.recordHeartbeat({
+      deviceId: 'pixel3a-kjgx',
+      appVersion: '18.5',
+      bundleHash: '',
+      sessionToken: 'hb-tok-1',
+      empNoAes: 'hb-aes-1',
+    });
+    const svcManagedDevicesn = new KjgxWritebackService(store, '', apiClient, h5.hash, {
+      empNo: 'emp00001',
+      password: 'SamplePass!123',
+      mobilePhone: '13800138000',
+      devicesn: 'trusted-android-id-01',
+    });
+    expect(await svcManagedDevicesn.hydrateFromStore()).toBe(true);
+    const managedDevicesnLogin = await svcManagedDevicesn.loginDirect(
+      { verifyId: 'cap-uuid-123', verifyCode: 'ABCD' },
+      actor,
+    );
+    expect(managedDevicesnLogin.ok).toBe(true);
+    expect(lastLoginInner.devicesn).toBe('trusted-android-id-01');
+
+    // 10086 device-change challenge returns friendly SMS guidance and hides captcha error
+    const challengeFetch: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/emp/api/login/login')) {
+        const hdrs = (init?.headers ?? {}) as Record<string, string>;
+        const reqX = crypto
+          .privateDecrypt(
+            { key: serverKeys.privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+            Buffer.from(hdrs.Skey!, 'base64'),
+          )
+          .toString('utf8');
+        const respPlain = JSON.stringify({
+          msgcode: '10086',
+          errorMsg: '因设备更换，请切换密码方式登录',
+          count: '13800138000',
+        });
+        return new Response(JSON.stringify({ data: aesEcbEncrypt(respPlain, reqX) }), {
+          status: 200,
+          headers: { 'response-encrypt-login': 'true' },
+        });
+      }
+      return mockFetch(input, init);
+    };
+    const svcChallenge = new KjgxWritebackService(
+      store,
+      '',
+      new KjgxDirectApiClient({ fetchImpl: challengeFetch }),
+      h5.hash,
+      { empNo: 'emp00001', password: 'SamplePass!123' },
+    );
+    const chRes = await svcChallenge.loginDirect({ verifyId: 'cap-uuid-123', verifyCode: 'ABCD' }, actor);
+    expect(chRes.ok).toBe(false);
+    expect(chRes.msgcode).toBe('10086');
+    expect(chRes.needs_sms).toBe(true);
+    expect(chRes.needs_captcha).toBe(false);
+    expect(chRes.message).toContain('发送短信码');
   });
 });

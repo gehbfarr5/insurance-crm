@@ -43,6 +43,7 @@ export interface KhzxLoginResult {
   message: string;
   needs_captcha?: boolean;
   needs_sms?: boolean;
+  challenge_mobile?: string;
   session?: KjgxSession;
   emp_name?: string;
   emp_no_prefix?: string;
@@ -793,12 +794,18 @@ export class KjgxDirectApiClient {
     }
 
     const msgLower = message.toLowerCase();
+    const isDeviceChallenge = msgcode === '10086' || msgcode === '10087';
+    const challengeMobile =
+      typeof decoded.count === 'string' && decoded.count.trim() ? decoded.count.trim() : undefined;
     return {
       ok: false,
       msgcode: msgcode || 'ERR',
-      message: message || `登录失败 (${msgcode || res.status})`,
-      needs_captcha: msgLower.includes('验证码') || msgcode === '1002' || msgcode === '02',
-      needs_sms: msgLower.includes('短信') || msgLower.includes('动态密码') || msgLower.includes('设备'),
+      message: isDeviceChallenge
+        ? '科技个险触发新设备核验 (10086)：请直接点击「发送短信码」，填写 6 位短信验证码后再点「验证并登录」'
+        : message || `登录失败 (${msgcode || res.status})`,
+      needs_captcha: !isDeviceChallenge && (msgLower.includes('验证码') || msgcode === '1002' || msgcode === '02'),
+      needs_sms: isDeviceChallenge || msgLower.includes('短信') || msgLower.includes('动态密码') || msgLower.includes('设备'),
+      ...(challengeMobile ? { challenge_mobile: challengeMobile } : {}),
     };
   }
 

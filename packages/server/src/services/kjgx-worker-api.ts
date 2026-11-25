@@ -32,7 +32,9 @@ export class KjgxWritebackService {
   private sessionUpdatedAt: string | null = null;
   private empName: string | null = null;
   private empNoPrefix: string | null = null;
-  private serverDevicesn: string = process.env.KJGX_SERVER_DEVICESN?.trim() || 'crm-seoul-kjgx-01';
+  private readonly configuredDevicesn: string;
+  private serverDevicesn: string;
+  private lastChallengeMobile: string | null = null;
   private lastH5Check: { hash: string; prefix: string; matched: boolean; script_count: number; checked_at: string } | null = null;
   private readonly apiClient: KjgxDirectApiClient;
   private readonly defaultEmpNo: string;
@@ -44,12 +46,14 @@ export class KjgxWritebackService {
     private readonly expectedBundleHash: string = process.env.KJGX_EXPECTED_BUNDLE_HASH ?? '',
     apiClient?: KjgxDirectApiClient,
     private readonly expectedH5Hash: string = process.env.KJGX_EXPECTED_H5_HASH ?? '',
-    managedCredentials?: { empNo?: string; password?: string; mobilePhone?: string },
+    managedCredentials?: { empNo?: string; password?: string; mobilePhone?: string; devicesn?: string },
   ) {
     this.apiClient = apiClient ?? new KjgxDirectApiClient();
     this.defaultEmpNo = (managedCredentials?.empNo ?? process.env.KJGX_EMP_NO ?? '').trim();
     this.defaultPassword = managedCredentials?.password ?? process.env.KJGX_PASSWORD ?? '';
     this.defaultMobilePhone = (managedCredentials?.mobilePhone ?? process.env.KJGX_MOBILE_PHONE ?? '').trim();
+    this.configuredDevicesn = (managedCredentials?.devicesn ?? process.env.KJGX_SERVER_DEVICESN ?? '').trim();
+    this.serverDevicesn = this.configuredDevicesn || 'crm-seoul-kjgx-01';
   }
 
   private isGateArmed(): boolean {
@@ -74,7 +78,7 @@ export class KjgxWritebackService {
     this.sessionUpdatedAt = saved.updated_at;
     this.empName = saved.empName ?? this.empName;
     this.empNoPrefix = saved.empNo ? saved.empNo.slice(0, 4) : this.empNoPrefix;
-    if (saved.devicesn) {
+    if (!this.configuredDevicesn && saved.devicesn) {
       this.serverDevicesn = saved.devicesn;
     }
     return true;
@@ -239,7 +243,7 @@ export class KjgxWritebackService {
     const empNo = params.empNo?.trim() || this.defaultEmpNo;
     const password = params.password || this.defaultPassword;
     const smsCode = params.smsCode?.trim() || '';
-    const mobilePhone = params.mobilePhone?.trim() || (smsCode ? this.defaultMobilePhone : '');
+    const mobilePhone = params.mobilePhone?.trim() || (smsCode ? (this.defaultMobilePhone || this.lastChallengeMobile || '') : '');
     if (!empNo || !password) {
       return {
         ok: false as const,
@@ -250,7 +254,7 @@ export class KjgxWritebackService {
       };
     }
 
-    const devicesn = params.devicesn?.trim() || this.serverDevicesn;
+    const devicesn = params.devicesn?.trim() || this.configuredDevicesn || this.serverDevicesn;
     const res = await this.apiClient.loginWithPassword({
       empNo,
       password,
@@ -262,6 +266,9 @@ export class KjgxWritebackService {
     });
 
     if (!res.ok || !res.session) {
+      if (res.challenge_mobile) {
+        this.lastChallengeMobile = res.challenge_mobile;
+      }
       return {
         ok: false as const,
         msgcode: res.msgcode,
@@ -270,6 +277,8 @@ export class KjgxWritebackService {
         needs_sms: Boolean(res.needs_sms),
       };
     }
+
+    this.lastChallengeMobile = null;
 
     this.liveSession = res.session;
     this.sessionSource = 'server_login';
