@@ -44,7 +44,7 @@ describe('KjgxDirectApiClient & KjgxWritebackService', () => {
     });
     expect(created.endpoint).toBe('/cuscenter/customer/saveCustomerController/saveCustomerInfo');
     expect(created.payload.empNo).toBe('EMP_AES_001');
-    expect(created.payload.cardType).toBe('1');
+    expect(created.payload.cardType).toBe('111');
     expect(aesEcbDecrypt(String(created.payload.cardNo), key)).toBe('31010119850101123X');
     expect(aesEcbDecrypt(String(created.payload.phoneNo), key)).toBe(customer.primary_phone);
     expect(created.payload.address).toBe('浦东新区世纪大道100号');

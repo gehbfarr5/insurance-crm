@@ -264,7 +264,7 @@ export function buildKhzxCustomerPayload(input: BuildKhzxPayloadInput): {
       : '';
 
   const cardType = rawIdNo
-    ? pickStr('cardType', 'cardType', '1')
+    ? pickStr('cardType', 'cardType', '111')
     : '';
 
   const basePayload: Record<string, unknown> = {
