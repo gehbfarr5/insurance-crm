@@ -11,6 +11,7 @@ import {
   type Customer360Response,
   type DashboardResponse,
   type IcloudPreviewItem,
+  type KjgxWorkerStatusResponse,
   type SyncStatusResponse,
   api,
   clearBearerToken,
@@ -71,6 +72,7 @@ export function App() {
   const [previewLimit, setPreviewLimit] = useState<10 | 20 | 50>(10);
   const [previewOffset, setPreviewOffset] = useState(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
+  const [workerStatus, setWorkerStatus] = useState<KjgxWorkerStatusResponse | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,7 +91,7 @@ export function App() {
   });
 
   const refreshAll = useCallback(async () => {
-    const [dash, custRes, camps, jobs, cfs, stg, st] = await Promise.all([
+    const [dash, custRes, camps, jobs, cfs, stg, st, wk] = await Promise.all([
       api.getDashboard(),
       api.searchCustomers({
         query: searchQuery || undefined,
@@ -101,6 +103,7 @@ export function App() {
       api.getConflicts(),
       api.getStaging(),
       api.getSyncStatus().catch(() => null),
+      api.getKjgxWorkerStatus().catch(() => null),
     ]);
     setDashboard(dash);
     const list = filterChip === 'orphan' ? custRes.customers.filter((c) => c.source_type === '孤儿单') : custRes.customers;
@@ -111,6 +114,7 @@ export function App() {
     setConflicts(cfs);
     setStaging(stg);
     if (st) setSyncStatus(st);
+    if (wk) setWorkerStatus(wk);
     setAuthRequired(false);
     setLoginError(null);
 
@@ -1130,9 +1134,21 @@ export function App() {
 
                 <section className="split-grid grid grid-cols-2 gap-4">
                   <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <h2 className="text-sm font-semibold">科技个险回写队列</h2>
-                      <span className="crm-badge crm-badge-primary">L0 OTA 门禁 + 强制回读</span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {workerStatus?.online && workerStatus.worker?.bundle_hash_matched ? (
+                          <span className="crm-badge crm-badge-success">
+                            Pixel 在线 ({workerStatus.worker.device_id} · v{workerStatus.worker.app_version} ·{' '}
+                            {workerStatus.worker.executor_ready ? '回写就绪' : '待命监控'})
+                          </span>
+                        ) : workerStatus?.online && workerStatus.worker ? (
+                          <span className="crm-badge crm-badge-error">Pixel 在线 · OTA 哈希变更(已熔断)</span>
+                        ) : (
+                          <span className="crm-badge crm-badge-warning">Pixel 离线 / 等待心跳</span>
+                        )}
+                        <span className="crm-badge crm-badge-primary">L0 OTA 门禁 + 强制回读</span>
+                      </div>
                     </div>
                     {kjgxJobs.map((j) => (
                       <div key={j.id} className="p-3 rounded-xl border border-[var(--card-border)] space-y-2 text-xs">

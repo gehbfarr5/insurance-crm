@@ -313,4 +313,76 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
       },
     });
   });
+
+  it('tracks live Pixel worker heartbeat and OTA bundle hash match status', async () => {
+    const wkHandle = await buildApp({
+      storage: 'memory',
+      authMode: 'bearer',
+      agentKeys: { 'pixel3a-kjgx': 'test-pixel-key', human_web: 'test-web-key' },
+      expectedBundleHash: EXPECTED_HASH,
+    });
+    try {
+      const before = await wkHandle.app.inject({
+        method: 'GET',
+        url: '/api/v1/kjgx/worker/status',
+        headers: { authorization: 'Bearer test-web-key' },
+      });
+      expect(before.statusCode).toBe(200);
+      expect(before.json()).toEqual({
+        online: false,
+        ota_gate_armed: true,
+        expected_bundle_hash_prefix: EXPECTED_HASH.slice(0, 12),
+        worker: null,
+      });
+
+      const okBeat = await wkHandle.app.inject({
+        method: 'POST',
+        url: '/api/v1/kjgx/worker/heartbeat',
+        headers: { authorization: 'Bearer test-pixel-key' },
+        payload: {
+          deviceId: 'pixel3a-kjgx',
+          appVersion: '18.5',
+          bundleHash: EXPECTED_HASH,
+          executorReady: false,
+        },
+      });
+      expect(okBeat.statusCode).toBe(200);
+      expect(okBeat.json().bundle_hash_matched).toBe(true);
+      expect(okBeat.json().ota_gate_armed).toBe(true);
+
+      const afterOk = await wkHandle.app.inject({
+        method: 'GET',
+        url: '/api/v1/kjgx/worker/status',
+        headers: { authorization: 'Bearer test-web-key' },
+      });
+      expect(afterOk.statusCode).toBe(200);
+      expect(afterOk.json().online).toBe(true);
+      expect(afterOk.json().worker.bundle_hash_matched).toBe(true);
+      expect(afterOk.json().worker.executor_ready).toBe(false);
+
+      const badBeat = await wkHandle.app.inject({
+        method: 'POST',
+        url: '/api/v1/kjgx/worker/heartbeat',
+        headers: { authorization: 'Bearer test-pixel-key' },
+        payload: {
+          deviceId: 'pixel3a-kjgx',
+          appVersion: '18.6',
+          bundleHash: 'altered_ota_hash_999',
+        },
+      });
+      expect(badBeat.statusCode).toBe(200);
+      expect(badBeat.json().bundle_hash_matched).toBe(false);
+
+      const afterBad = await wkHandle.app.inject({
+        method: 'GET',
+        url: '/api/v1/kjgx/worker/status',
+        headers: { authorization: 'Bearer test-web-key' },
+      });
+      expect(afterBad.statusCode).toBe(200);
+      expect(afterBad.json().online).toBe(true);
+      expect(afterBad.json().worker.bundle_hash_matched).toBe(false);
+    } finally {
+      await wkHandle.close();
+    }
+  });
 });

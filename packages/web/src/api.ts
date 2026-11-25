@@ -123,6 +123,20 @@ export interface IcloudPreviewItem {
   }>;
 }
 
+export interface KjgxWorkerStatusResponse {
+  online: boolean;
+  ota_gate_armed: boolean;
+  expected_bundle_hash_prefix: string | null;
+  worker: {
+    device_id: string;
+    app_version: string;
+    bundle_hash_prefix: string;
+    bundle_hash_matched: boolean;
+    executor_ready: boolean;
+    last_seen_at: string;
+  } | null;
+}
+
 export interface SyncStatusResponse {
   configured: boolean;
   ok?: boolean;
@@ -204,6 +218,7 @@ export const api = {
     }),
   getCampaigns: () => req<CampaignWithMembers[]>('api/v1/campaigns'),
   getKjgxJobs: () => req<KjgxWritebackJob[]>('api/v1/kjgx/jobs'),
+  getKjgxWorkerStatus: () => req<KjgxWorkerStatusResponse>('api/v1/kjgx/worker/status'),
   approveKjgxJob: (id: string) => req<KjgxWritebackJob>(`api/v1/kjgx/jobs/${id}/approve`, { method: 'POST', body: '{}' }),
   rejectKjgxJob: (id: string) => req<KjgxWritebackJob>(`api/v1/kjgx/jobs/${id}/reject`, { method: 'POST', body: '{}' }),
   getConflicts: () => req<SyncConflict[]>('api/v1/sync/conflicts'),

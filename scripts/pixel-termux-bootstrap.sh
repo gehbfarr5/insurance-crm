@@ -57,8 +57,11 @@ case "$MODE" in
     shift
     : "${CRM_API_URL:?CRM_API_URL is required (e.g. https://<host>:<port>/crm)}"
     : "${CRM_WORKER_TOKEN:?CRM_WORKER_TOKEN is required (pixel3a-kjgx Bearer key)}"
-    : "${KJGX_BUNDLE_HASH:?KJGX_BUNDLE_HASH is required (expected RN bundle SHA-256)}"
-    exec node "$REPO_ROOT/scripts/kjgx-worker.mjs" "$@"
+    if command -v node >/dev/null 2>&1; then
+      : "${KJGX_BUNDLE_HASH:?KJGX_BUNDLE_HASH is required for kjgx-worker.mjs}"
+      exec node "$REPO_ROOT/scripts/kjgx-worker.mjs" "$@"
+    fi
+    exec sh "$REPO_ROOT/scripts/kjgx-worker.sh" "$@"
     ;;
 
   --reverse-ssh)

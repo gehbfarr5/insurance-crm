@@ -1,11 +1,71 @@
 import { KjgxReceiptSchema, type EnqueueKjgxJobInput, type KjgxWritebackJob } from '@insurance-crm/shared';
 import type { ActorContext, CrmStore } from './store.js';
 
+export interface KjgxWorkerHeartbeat {
+  device_id: string;
+  app_version: string;
+  bundle_hash_prefix: string;
+  bundle_hash_matched: boolean;
+  executor_ready: boolean;
+  last_seen_at: string;
+}
+
 export class KjgxWritebackService {
+  private lastHeartbeat: KjgxWorkerHeartbeat | null = null;
+
   constructor(
     private readonly store: CrmStore,
     private readonly expectedBundleHash: string = process.env.KJGX_EXPECTED_BUNDLE_HASH ?? '',
   ) {}
+
+  private isGateArmed(): boolean {
+    const h = this.expectedBundleHash.trim();
+    return Boolean(h) && h !== 'replace-with-current-sha256';
+  }
+
+  async recordHeartbeat(params: {
+    deviceId: string;
+    appVersion: string;
+    bundleHash: string;
+    executorReady?: boolean;
+  }) {
+    const gateArmed = this.isGateArmed();
+    const expected = this.expectedBundleHash.trim();
+    const matched = !gateArmed || params.bundleHash === expected;
+    this.lastHeartbeat = {
+      device_id: params.deviceId,
+      app_version: params.appVersion,
+      bundle_hash_prefix: params.bundleHash.slice(0, 12),
+      bundle_hash_matched: matched,
+      executor_ready: params.executorReady === true,
+      last_seen_at: new Date().toISOString(),
+    };
+    const jobs = await this.store.listKjgxJobs({ execution_status: 'queued' });
+    const pendingApproved = jobs.filter(
+      (j) => (j.approval_status === 'approved' || j.approval_status === 'auto_approved') && j.attempts < j.max_attempts,
+    ).length;
+    return {
+      ok: true as const,
+      ota_gate_armed: gateArmed,
+      bundle_hash_matched: matched,
+      pending_approved_jobs: pendingApproved,
+      worker: this.lastHeartbeat,
+    };
+  }
+
+  getWorkerStatus() {
+    const gateArmed = this.isGateArmed();
+    const expected = this.expectedBundleHash.trim();
+    const online = Boolean(
+      this.lastHeartbeat && Date.now() - Date.parse(this.lastHeartbeat.last_seen_at) <= 120_000,
+    );
+    return {
+      online,
+      ota_gate_armed: gateArmed,
+      expected_bundle_hash_prefix: gateArmed ? expected.slice(0, 12) : null,
+      worker: this.lastHeartbeat,
+    };
+  }
 
   async enqueue(input: EnqueueKjgxJobInput, actor: ActorContext): Promise<KjgxWritebackJob> {
     const detail = await this.store.getCustomer360(input.customer_id);
@@ -64,6 +124,17 @@ export class KjgxWritebackService {
    * Rejects dispatch and marks `blocked_ota` if bundleHash diverges from expectedBundleHash.
    */
   async claimNext(params: { deviceId: string; appVersion: string; bundleHash: string }) {
+    const gateActive = this.isGateArmed();
+    const configuredHash = this.expectedBundleHash.trim();
+    this.lastHeartbeat = {
+      device_id: params.deviceId,
+      app_version: params.appVersion,
+      bundle_hash_prefix: params.bundleHash.slice(0, 12),
+      bundle_hash_matched: !gateActive || params.bundleHash === configuredHash,
+      executor_ready: true,
+      last_seen_at: new Date().toISOString(),
+    };
+
     const jobs = await this.store.listKjgxJobs({ execution_status: 'queued' });
     const eligible = jobs
       .filter((j) => (j.approval_status === 'approved' || j.approval_status === 'auto_approved') && j.attempts < j.max_attempts)
@@ -74,8 +145,6 @@ export class KjgxWritebackService {
     }
 
     const nextJob = eligible[0]!;
-    const configuredHash = this.expectedBundleHash.trim();
-    const gateActive = Boolean(configuredHash) && configuredHash !== 'replace-with-current-sha256';
     if (gateActive && params.bundleHash !== configuredHash) {
       const blocked = await this.store.updateKjgxJob(
         nextJob.id,

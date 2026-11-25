@@ -277,6 +277,24 @@ export function registerApiRoutes(
       }
     });
 
+    v1.get('/kjgx/worker/status', async () => kjgxService.getWorkerStatus());
+
+    v1.post('/kjgx/worker/heartbeat', async (req, reply) => {
+      try {
+        const body = z
+          .object({
+            deviceId: z.string().min(1),
+            appVersion: z.string().min(1),
+            bundleHash: z.string().min(1),
+            executorReady: z.boolean().optional(),
+          })
+          .parse(req.body);
+        return await kjgxService.recordHeartbeat(body);
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
     v1.post('/kjgx/worker/claim', async (req, reply) => {
       try {
         const body = z
