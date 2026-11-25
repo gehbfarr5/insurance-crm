@@ -6,6 +6,8 @@ import {
   aesEcbEncrypt,
   buildKhzxCustomerPayload,
   empNoAesHexEncrypt,
+  formatKhzxRemake,
+  KJGX_REMAKE_MAX_LEN,
   KjgxDirectApiClient,
   md5Hex,
   sm4CbcEncrypt,
@@ -72,6 +74,37 @@ describe('KjgxDirectApiClient & KjgxWritebackService', () => {
     expect(updated.payload.email).toBe('keep@example.com');
     expect(updated.payload.companyName).toBe('原有单位集团');
     expect(updated.payload.address).toBe('新地址88号');
+
+    // Verify remake strips sync blocks and enforces 200-char ceiling keeping newest lines
+    const rawSyncNote = [
+      '2026-10-01 早期沟通记录：客户咨询重疾险保障期限、保费豁免条款及轻症赔付比例，初步了解家庭成员健康状况及既往医保就诊历史情况。',
+      '[#CRM-BEGIN]',
+      '身份证: 31010119850101123X',
+      '总保费¥100,000',
+      '[#CRM-END]',
+      '[#FUP:abc123] 2026-10-15 | 跟进 | 待回访',
+      '2026-10-15 第二条跟进记录：补充家族体检情况及缴费年限偏好，预计保费预算 3 万元/年，希望对比两款主流产品条款，同时询问住院医疗险报销范围和免赔额设置规则。',
+      '2026-11-25 最新跟进记录：已约周三上午 10:00 携带计划书上门拜访并核对投保人信息。',
+    ].join('\n');
+    const formatted = formatKhzxRemake(rawSyncNote);
+    expect(formatted.length).toBeLessThanOrEqual(KJGX_REMAKE_MAX_LEN);
+    expect(formatted).not.toContain('[#CRM-BEGIN]');
+    expect(formatted).not.toContain('[#FUP:');
+    expect(formatted).toContain('2026-11-25 最新跟进记录');
+    expect(formatted.endsWith('…(详见CRM)')).toBe(true);
+
+    const shortNote = '2026-10-31 【下周联系】待确认\n[#CRM-BEGIN]\n内部块\n[#CRM-END]';
+    expect(formatKhzxRemake(shortNote)).toBe('2026-10-31 【下周联系】待确认');
+
+    const budgeted = buildKhzxCustomerPayload({
+      mode: 'create',
+      customer,
+      payloadTarget: { remark: rawSyncNote },
+      empNoAES: 'EMP_AES_001',
+      encryptStr: key,
+    });
+    expect(String(budgeted.payload.remake).length).toBeLessThanOrEqual(KJGX_REMAKE_MAX_LEN);
+    expect(budgeted.expectedPlain.remake).toBe(budgeted.payload.remake);
   });
 
   it('executes approved writeback end-to-end via mocked RSA/AES khzx API with mandatory readback verification', async () => {

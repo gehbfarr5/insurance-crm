@@ -253,6 +253,47 @@ export function normalizeKhzxDate(dateStr?: string | null): string {
   return dateStr.trim().replace(/\./g, '-').slice(0, 10);
 }
 
+export const KJGX_REMAKE_MAX_LEN = 200;
+
+/**
+ * Strips CRM/iCloud sync blocks and budgets `remake` to KJGX's 200-char limit,
+ * keeping the newest trailing follow-up lines when truncation is required.
+ */
+export function formatKhzxRemake(raw?: string | null, maxLen = KJGX_REMAKE_MAX_LEN): string {
+  if (!raw) return '';
+  const withoutSyncBlocks = raw.replace(/\[#CRM-BEGIN\][\s\S]*?\[#CRM-END\]/g, '');
+  const lines = withoutSyncBlocks
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('[#FUP:'));
+  if (lines.length === 0) return '';
+
+  const cleaned = lines.join('\n');
+  if (cleaned.length <= maxLen) return cleaned;
+
+  const suffix = '…(详见CRM)';
+  const budget = Math.max(0, maxLen - suffix.length);
+  if (budget === 0) return cleaned.slice(0, maxLen);
+
+  const kept: string[] = [];
+  let total = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    const addedLen = kept.length === 0 ? line.length : line.length + 1;
+    if (total + addedLen <= budget) {
+      kept.unshift(line);
+      total += addedLen;
+    } else if (kept.length === 0) {
+      kept.unshift(line.slice(0, budget));
+      total = budget;
+      break;
+    } else {
+      break;
+    }
+  }
+  return `${kept.join('\n')}${suffix}`;
+}
+
 export function tryDecryptField(raw: unknown, encryptKey: string): string {
   if (typeof raw !== 'string') return '';
   const trimmed = raw.trim();
@@ -351,13 +392,14 @@ export function buildKhzxCustomerPayload(input: BuildKhzxPayloadInput): {
     (typeof ex.companyName === 'string' ? ex.companyName : '') ||
     '';
 
-  const remake =
+  const rawRemake =
     (typeof payloadTarget.remake === 'string' && payloadTarget.remake.trim()) ||
     (typeof payloadTarget.remark === 'string' && payloadTarget.remark.trim()) ||
     (typeof payloadTarget.summary === 'string' && payloadTarget.summary.trim()) ||
     customer.manual_summary ||
     (typeof ex.remake === 'string' ? ex.remake : '') ||
     '';
+  const remake = formatKhzxRemake(rawRemake);
 
   const existingPhoneList = Array.isArray(ex.phoneList) ? ex.phoneList : [];
   const existingAddrList = Array.isArray(ex.addressList) ? ex.addressList : [];

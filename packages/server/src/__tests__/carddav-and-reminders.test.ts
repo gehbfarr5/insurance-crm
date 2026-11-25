@@ -5,6 +5,7 @@ import {
   type CardDavContactPatch,
   type CardDavContactRecord,
   type CardDavTransport,
+  DirectIcloudCardDavClient,
   parseVcard,
   patchVcardSurgical,
 } from '../services/carddav-client.js';
@@ -95,6 +96,65 @@ describe('Direct CardDAV & PyiCloud Reminders Unlocked Integration', () => {
 
     const groupVcard = 'BEGIN:VCARD\r\nVERSION:3.0\r\nUID:grp-1\r\nX-ADDRESSBOOKSERVER-KIND:group\r\nFN:VIP\r\nEND:VCARD\r\n';
     expect(parseVcard(groupVcard).isGroup).toBe(true);
+  });
+
+  it('decodes &#13; XML numeric entities in iCloud CardDAV responses without corrupting TEL or NOTE', async () => {
+    const mockFetch: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (method === 'PROPFIND' && url === 'https://contacts.icloud.com/') {
+        return new Response(
+          '<d:multistatus xmlns:d="DAV:"><d:response><d:propstat><d:prop><d:current-user-principal><d:href>/p/1/</d:href></d:current-user-principal></d:prop></d:propstat></d:response></d:multistatus>',
+          { status: 207 },
+        );
+      }
+      if (method === 'PROPFIND' && url.endsWith('/p/1/')) {
+        return new Response(
+          '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:response><d:propstat><d:prop><c:addressbook-home-set><d:href>/home/</d:href></c:addressbook-home-set></d:prop></d:propstat></d:response></d:multistatus>',
+          { status: 207 },
+        );
+      }
+      if (method === 'PROPFIND' && url.endsWith('/home/')) {
+        return new Response(
+          '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:response><d:href>/home/card/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><c:addressbook/></d:resourcetype></d:prop></d:propstat></d:response></d:multistatus>',
+          { status: 207 },
+        );
+      }
+      if (method === 'PROPFIND' && url.endsWith('/home/card/')) {
+        return new Response(
+          '<d:multistatus xmlns:d="DAV:"><d:response><d:href>/home/card/a.vcf</d:href><d:propstat><d:prop><d:getetag>"e1"</d:getetag></d:prop></d:propstat></d:response></d:multistatus>',
+          { status: 207 },
+        );
+      }
+      if (method === 'REPORT') {
+        const vcard = [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          'UID:test-cr-1',
+          'FN:丁敏',
+          'TEL;TYPE=CELL:150-0000-3109',
+          'NOTE:2026-10-31 约下周一',
+          'END:VCARD',
+        ].join('&#13;\n');
+        return new Response(
+          `<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:response><d:href>/home/card/a.vcf</d:href><d:propstat><d:prop><d:getetag>"e1"</d:getetag><c:address-data>${vcard}</c:address-data></d:prop></d:propstat></d:response></d:multistatus>`,
+          { status: 207 },
+        );
+      }
+      return new Response('not found', { status: 404 });
+    };
+
+    const client = new DirectIcloudCardDavClient({
+      email: 'test@example.com',
+      appPassword: 'mock',
+      baseUrl: 'https://contacts.icloud.com',
+      fetchImpl: mockFetch,
+    });
+    const contacts = await client.listContacts();
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]!.parsed.fn).toBe('丁敏');
+    expect(contacts[0]!.parsed.phones).toEqual(['15000003109']);
+    expect(contacts[0]!.parsed.note).toBe('2026-10-31 约下周一');
   });
 
   describe('Unlocked CRM REST + CardDAV + Reminders bridge flow', () => {
