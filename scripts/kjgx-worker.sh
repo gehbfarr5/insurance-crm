@@ -1,9 +1,10 @@
 #!/bin/sh
 set -eu
 
-# Zero-dependency KJGX Worker / Heartbeat Client (POSIX sh + curl / Termux curl).
-# Designed to run natively on rooted Android/Pixel devices without Node.js or Python.
-# Note: At boot, Magisk /data/adb/service.d/ invokes this via `/system/bin/sh`.
+# Zero-dependency KJGX Worker / Heartbeat Client (POSIX sh + sqlite3 + Termux curl).
+# Monitors RN bundle SHA-256 (L0 OTA gate) and securely syncs active KJGX session
+# credentials from RKStorage over HTTPS Bearer auth to Seoul CRM Core for
+# headless direct khzx API writeback execution.
 
 DEFAULT_ENV_FILE="${WORKER_ENV_FILE:-/data/adb/crm-worker/worker.env}"
 if [ -f "$DEFAULT_ENV_FILE" ]; then
@@ -28,6 +29,7 @@ done
 KJGX_DEVICE_ID="${KJGX_DEVICE_ID:-pixel3a-kjgx}"
 KJGX_PACKAGE="${KJGX_PACKAGE:-com.cpic.kjgxplus}"
 KJGX_BUNDLE_PATH="${KJGX_BUNDLE_PATH:-/data/user/0/com.cpic.kjgxplus/files/react_native/Android/index.android.bundle}"
+KJGX_RKSTORAGE_PATH="${KJGX_RKSTORAGE_PATH:-/data/user/0/com.cpic.kjgxplus/databases/RKStorage}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-30}"
 API_BASE="${CRM_API_URL%/}"
 
@@ -50,7 +52,17 @@ if [ -z "$CURL_BIN" ]; then
 fi
 
 sanitize_token() {
-  printf '%s' "$1" | tr -cd 'A-Za-z0-9._:-'
+  printf '%s' "$1" | tr -cd 'A-Za-z0-9._:+-'
+}
+
+read_rk_key() {
+  k="$1"
+  if [ -r "$KJGX_RKSTORAGE_PATH" ] && command -v sqlite3 >/dev/null 2>&1; then
+    v="$(sqlite3 "$KJGX_RKSTORAGE_PATH" "SELECT value FROM catalystLocalStorage WHERE key='$k';" 2>/dev/null | tr -d '"\r\n' || true)"
+    sanitize_token "$v"
+    return
+  fi
+  printf ''
 }
 
 detect_app_version() {
@@ -66,7 +78,7 @@ detect_app_version() {
       return
     fi
   fi
-  printf '18.5'
+  printf '18.8'
 }
 
 detect_bundle_hash() {
@@ -121,8 +133,11 @@ poll_once() {
     return 1
   fi
 
+  sess_tok="$(read_rk_key token)"
+  emp_aes="$(read_rk_key empNoAES)"
+
   exec_ready="false"
-  if [ -n "${KJGX_EXEC_CMD:-}" ]; then
+  if [ -n "${KJGX_EXEC_CMD:-}" ] || { [ -n "$sess_tok" ] && [ -n "$emp_aes" ]; }; then
     exec_ready="true"
   fi
 
@@ -158,7 +173,11 @@ poll_once() {
     return 0
   fi
 
-  payload="{\"deviceId\":\"$dev_id\",\"appVersion\":\"$app_ver\",\"bundleHash\":\"$bhash\",\"executorReady\":$exec_ready}"
+  if [ -n "$sess_tok" ] && [ -n "$emp_aes" ]; then
+    payload="{\"deviceId\":\"$dev_id\",\"appVersion\":\"$app_ver\",\"bundleHash\":\"$bhash\",\"executorReady\":$exec_ready,\"sessionToken\":\"$sess_tok\",\"empNoAes\":\"$emp_aes\"}"
+  else
+    payload="{\"deviceId\":\"$dev_id\",\"appVersion\":\"$app_ver\",\"bundleHash\":\"$bhash\",\"executorReady\":$exec_ready}"
+  fi
   raw="$(http_post "$API_BASE/api/v1/kjgx/worker/heartbeat" "$payload")"
   http_code="$(printf '%s\n' "$raw" | grep '__HTTP_CODE:' | tail -n 1 | cut -d: -f2 || true)"
   resp_body="$(printf '%s\n' "$raw" | grep -v '__HTTP_CODE:' || true)"

@@ -332,6 +332,8 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
         online: false,
         ota_gate_armed: true,
         expected_bundle_hash_prefix: EXPECTED_HASH.slice(0, 12),
+        execution_mode: 'direct_khzx_api',
+        session_present: false,
         worker: null,
       });
 

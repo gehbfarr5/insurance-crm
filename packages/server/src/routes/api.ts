@@ -279,6 +279,18 @@ export function registerApiRoutes(
 
     v1.get('/kjgx/worker/status', async () => kjgxService.getWorkerStatus());
 
+    v1.post('/kjgx/worker/probe', async () => kjgxService.probeSession());
+
+    v1.post('/kjgx/jobs/:id/execute', async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        const body = z.object({ dryRun: z.boolean().optional() }).optional().parse(req.body);
+        return await kjgxService.executeJob(id, actorOf(req), { dryRun: body?.dryRun });
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
     v1.post('/kjgx/worker/heartbeat', async (req, reply) => {
       try {
         const body = z
@@ -287,6 +299,8 @@ export function registerApiRoutes(
             appVersion: z.string().min(1),
             bundleHash: z.string().min(1),
             executorReady: z.boolean().optional(),
+            sessionToken: z.string().optional(),
+            empNoAes: z.string().optional(),
           })
           .parse(req.body);
         return await kjgxService.recordHeartbeat(body);
