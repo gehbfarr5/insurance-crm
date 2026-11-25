@@ -125,8 +125,23 @@ export interface IcloudPreviewItem {
 
 export interface KjgxWorkerStatusResponse {
   online: boolean;
+  pixel_online?: boolean;
   ota_gate_armed: boolean;
   expected_bundle_hash_prefix: string | null;
+  execution_mode?: 'direct_khzx_api';
+  session_present?: boolean;
+  session_source?: 'server_login' | 'pixel_heartbeat' | null;
+  session_updated_at?: string | null;
+  emp_name?: string | null;
+  emp_no_prefix?: string | null;
+  h5_gate?: {
+    armed: boolean;
+    expected_prefix: string | null;
+    last_prefix: string | null;
+    matched: boolean | null;
+    script_count: number | null;
+    checked_at: string | null;
+  };
   worker: {
     device_id: string;
     app_version: string;
@@ -135,6 +150,36 @@ export interface KjgxWorkerStatusResponse {
     executor_ready: boolean;
     last_seen_at: string;
   } | null;
+}
+
+export interface KjgxProbeResponse {
+  ok: boolean;
+  status: number;
+  session_expired: boolean;
+  code: string;
+  message: string;
+  emp_name?: string;
+  emp_no_prefix?: string;
+  branch_code?: string;
+  channel?: string;
+}
+
+export interface KjgxCaptchaResponse {
+  ok: boolean;
+  verify_id: string;
+  image_data_url: string;
+  verify_required: boolean;
+}
+
+export interface KjgxLoginResponse {
+  ok: boolean;
+  msgcode: string;
+  message: string;
+  needs_captcha?: boolean;
+  needs_sms?: boolean;
+  emp_name?: string | null;
+  emp_no_prefix?: string | null;
+  session_present?: boolean;
 }
 
 export interface SyncStatusResponse {
@@ -219,8 +264,51 @@ export const api = {
   getCampaigns: () => req<CampaignWithMembers[]>('api/v1/campaigns'),
   getKjgxJobs: () => req<KjgxWritebackJob[]>('api/v1/kjgx/jobs'),
   getKjgxWorkerStatus: () => req<KjgxWorkerStatusResponse>('api/v1/kjgx/worker/status'),
+  probeKjgxWorker: () => req<KjgxProbeResponse>('api/v1/kjgx/worker/probe', { method: 'POST', body: '{}' }),
+  checkKjgxH5Gate: () =>
+    req<{ ok: boolean; armed: boolean; hash: string; prefix: string; matched: boolean; script_count: number; checked_at: string }>(
+      'api/v1/kjgx/worker/h5-check',
+      { method: 'POST', body: '{}' },
+    ),
+  getKjgxCaptcha: (empNo?: string) =>
+    req<KjgxCaptchaResponse>('api/v1/kjgx/auth/captcha', {
+      method: 'POST',
+      body: JSON.stringify(empNo ? { empNo } : {}),
+    }),
+  sendKjgxSms: (empNo: string) =>
+    req<{ ok: boolean; code: string; message: string }>('api/v1/kjgx/auth/sms', {
+      method: 'POST',
+      body: JSON.stringify({ empNo }),
+    }),
+  loginKjgx: async (body: {
+    empNo: string;
+    password: string;
+    verifyId?: string;
+    verifyCode?: string;
+    mobilePhone?: string;
+    smsCode?: string;
+  }): Promise<KjgxLoginResponse> => {
+    const token = getBearerToken();
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (token) headers.authorization = `Bearer ${token}`;
+    const res = await fetch('api/v1/kjgx/auth/login', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) {
+      throw new ApiUnauthorizedError('需要访问密钥登录');
+    }
+    return res.json() as Promise<KjgxLoginResponse>;
+  },
+  logoutKjgx: () => req<{ ok: boolean; session_present: boolean }>('api/v1/kjgx/auth/logout', { method: 'POST', body: '{}' }),
   approveKjgxJob: (id: string) => req<KjgxWritebackJob>(`api/v1/kjgx/jobs/${id}/approve`, { method: 'POST', body: '{}' }),
   rejectKjgxJob: (id: string) => req<KjgxWritebackJob>(`api/v1/kjgx/jobs/${id}/reject`, { method: 'POST', body: '{}' }),
+  executeKjgxJob: (id: string, dryRun = false) =>
+    req<{ ok: boolean; dry_run: boolean; job: KjgxWritebackJob; receipt?: Record<string, unknown> }>(
+      `api/v1/kjgx/jobs/${id}/execute`,
+      { method: 'POST', body: JSON.stringify({ dryRun }) },
+    ),
   getConflicts: () => req<SyncConflict[]>('api/v1/sync/conflicts'),
   resolveConflict: (id: string, resolution: 'keep_crm' | 'take_remote') =>
     req<SyncConflict>(`api/v1/sync/conflicts/${id}/resolve`, {

@@ -31,6 +31,7 @@ import {
   followups,
   importStaging,
   interactions,
+  kjgxSessions,
   kjgxWritebackJobs,
   policies,
   syncConflicts,
@@ -100,6 +101,16 @@ export interface Customer360 {
 export interface ActorContext {
   actorType: 'human' | 'agent' | 'sync_daemon' | 'kjgx_worker';
   actorId: string;
+}
+
+export interface PersistedKjgxSession {
+  accesstoken: string;
+  empNoAES: string;
+  empNo?: string;
+  empName?: string;
+  devicesn: string;
+  source: 'server_login' | 'pixel_heartbeat';
+  updated_at: string;
 }
 
 export interface CrmStore {
@@ -181,6 +192,16 @@ export interface CrmStore {
 
   listAuditLogs(limit?: number): Promise<AuditLogEntry[]>;
   appendAudit(entry: Omit<AuditLogEntry, 'id' | 'created_at'>): Promise<AuditLogEntry>;
+  saveKjgxSession(input: {
+    accesstoken: string;
+    empNoAES: string;
+    empNo?: string;
+    empName?: string;
+    devicesn: string;
+    source: 'server_login' | 'pixel_heartbeat';
+  }): Promise<void>;
+  loadKjgxSession(): Promise<PersistedKjgxSession | null>;
+  clearKjgxSession(): Promise<void>;
   getDashboard(): Promise<{
     stats: {
       total_customers: number;
@@ -229,6 +250,14 @@ export class InMemoryDemoStore implements CrmStore {
   private conflicts: SyncConflict[];
   private stagingItems: ImportStagingItem[];
   private auditLogs: AuditLogEntry[];
+  private persistedKjgxSession: {
+    encrypted: Buffer;
+    devicesn: string;
+    emp_no_prefix: string | null;
+    emp_name: string | null;
+    source: 'server_login' | 'pixel_heartbeat';
+    updated_at: string;
+  } | null = null;
 
   constructor(private readonly vault: IdVault) {
     const seed = buildDemoSeed();
@@ -1060,6 +1089,55 @@ export class InMemoryDemoStore implements CrmStore {
     return created;
   }
 
+  async saveKjgxSession(input: {
+    accesstoken: string;
+    empNoAES: string;
+    empNo?: string;
+    empName?: string;
+    devicesn: string;
+    source: 'server_login' | 'pixel_heartbeat';
+  }): Promise<void> {
+    const payload = JSON.stringify({
+      accesstoken: input.accesstoken,
+      empNoAES: input.empNoAES,
+      ...(input.empNo ? { empNo: input.empNo } : {}),
+    });
+    this.persistedKjgxSession = {
+      encrypted: this.vault.encryptSecret(payload),
+      devicesn: input.devicesn,
+      emp_no_prefix: input.empNo ? input.empNo.slice(0, 4) : null,
+      emp_name: input.empName ?? null,
+      source: input.source,
+      updated_at: nowIso(),
+    };
+  }
+
+  async loadKjgxSession(): Promise<PersistedKjgxSession | null> {
+    if (!this.persistedKjgxSession) return null;
+    try {
+      const parsed = JSON.parse(this.vault.decryptSecret(this.persistedKjgxSession.encrypted)) as {
+        accesstoken: string;
+        empNoAES: string;
+        empNo?: string;
+      };
+      return {
+        accesstoken: parsed.accesstoken,
+        empNoAES: parsed.empNoAES,
+        empNo: parsed.empNo,
+        empName: this.persistedKjgxSession.emp_name ?? undefined,
+        devicesn: this.persistedKjgxSession.devicesn,
+        source: this.persistedKjgxSession.source,
+        updated_at: this.persistedKjgxSession.updated_at,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async clearKjgxSession(): Promise<void> {
+    this.persistedKjgxSession = null;
+  }
+
   async getDashboard() {
     const active = this.customers.filter((c) => c.status === 'active' && !c.deleted_at);
     const pendingJobs = this.kjgxJobs.filter((j) => j.approval_status === 'pending_review');
@@ -1237,10 +1315,28 @@ function mapJobRow(r: typeof kjgxWritebackJobs.$inferSelect, customerName?: stri
 }
 
 export class PostgresStore implements CrmStore {
+  private kjgxSessionsTableReady = false;
+
   constructor(
     private readonly db: DbClient,
     private readonly vault: IdVault,
   ) {}
+
+  private async ensureKjgxSessionsTable(): Promise<void> {
+    if (this.kjgxSessionsTableReady) return;
+    await this.db.execute(sql`
+      CREATE TABLE IF NOT EXISTS kjgx_sessions (
+        id text PRIMARY KEY,
+        session_encrypted bytea NOT NULL,
+        devicesn text NOT NULL,
+        emp_no_prefix text,
+        emp_name text,
+        source text NOT NULL DEFAULT 'server_login',
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    this.kjgxSessionsTableReady = true;
+  }
 
   async searchCustomers(params: SearchCustomersParams) {
     const limit = Math.min(Math.max(Number.isFinite(params.limit) ? Math.trunc(params.limit!) : 50, 1), 500);
@@ -2310,6 +2406,76 @@ export class PostgresStore implements CrmStore {
       metadata: row!.metadata ?? {},
       created_at: row!.created_at.toISOString(),
     };
+  }
+
+  async saveKjgxSession(input: {
+    accesstoken: string;
+    empNoAES: string;
+    empNo?: string;
+    empName?: string;
+    devicesn: string;
+    source: 'server_login' | 'pixel_heartbeat';
+  }): Promise<void> {
+    await this.ensureKjgxSessionsTable();
+    const payload = JSON.stringify({
+      accesstoken: input.accesstoken,
+      empNoAES: input.empNoAES,
+      ...(input.empNo ? { empNo: input.empNo } : {}),
+    });
+    const encrypted = this.vault.encryptSecret(payload);
+    const prefix = input.empNo ? input.empNo.slice(0, 4) : null;
+    const empName = input.empName ?? null;
+    await this.db
+      .insert(kjgxSessions)
+      .values({
+        id: 'default',
+        session_encrypted: encrypted,
+        devicesn: input.devicesn,
+        emp_no_prefix: prefix,
+        emp_name: empName,
+        source: input.source,
+        updated_at: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: kjgxSessions.id,
+        set: {
+          session_encrypted: encrypted,
+          devicesn: input.devicesn,
+          emp_no_prefix: prefix ?? sql`${kjgxSessions.emp_no_prefix}`,
+          emp_name: empName ?? sql`${kjgxSessions.emp_name}`,
+          source: input.source,
+          updated_at: new Date(),
+        },
+      });
+  }
+
+  async loadKjgxSession(): Promise<PersistedKjgxSession | null> {
+    await this.ensureKjgxSessionsTable();
+    const [row] = await this.db.select().from(kjgxSessions).where(eq(kjgxSessions.id, 'default'));
+    if (!row) return null;
+    try {
+      const parsed = JSON.parse(this.vault.decryptSecret(row.session_encrypted)) as {
+        accesstoken: string;
+        empNoAES: string;
+        empNo?: string;
+      };
+      return {
+        accesstoken: parsed.accesstoken,
+        empNoAES: parsed.empNoAES,
+        empNo: parsed.empNo,
+        empName: row.emp_name ?? undefined,
+        devicesn: row.devicesn,
+        source: row.source === 'pixel_heartbeat' ? 'pixel_heartbeat' : 'server_login',
+        updated_at: row.updated_at.toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async clearKjgxSession(): Promise<void> {
+    await this.ensureKjgxSessionsTable();
+    await this.db.delete(kjgxSessions).where(eq(kjgxSessions.id, 'default'));
   }
 
   async getDashboard() {

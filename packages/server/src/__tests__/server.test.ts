@@ -328,12 +328,14 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
         headers: { authorization: 'Bearer test-web-key' },
       });
       expect(before.statusCode).toBe(200);
-      expect(before.json()).toEqual({
+      expect(before.json()).toMatchObject({
         online: false,
+        pixel_online: false,
         ota_gate_armed: true,
         expected_bundle_hash_prefix: EXPECTED_HASH.slice(0, 12),
         execution_mode: 'direct_khzx_api',
         session_present: false,
+        session_source: null,
         worker: null,
       });
 
@@ -383,6 +385,32 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
       expect(afterBad.statusCode).toBe(200);
       expect(afterBad.json().online).toBe(true);
       expect(afterBad.json().worker.bundle_hash_matched).toBe(false);
+
+      // Auth & probe guard rails when not logged in
+      const probeNoSess = await wkHandle.app.inject({
+        method: 'POST',
+        url: '/api/v1/kjgx/worker/probe',
+        headers: { authorization: 'Bearer test-web-key' },
+        payload: {},
+      });
+      expect(probeNoSess.statusCode).toBe(200);
+      expect(probeNoSess.json().session_expired).toBe(true);
+
+      const unauthCaptcha = await wkHandle.app.inject({
+        method: 'POST',
+        url: '/api/v1/kjgx/auth/captcha',
+        payload: {},
+      });
+      expect(unauthCaptcha.statusCode).toBe(401);
+
+      const logoutRes = await wkHandle.app.inject({
+        method: 'POST',
+        url: '/api/v1/kjgx/auth/logout',
+        headers: { authorization: 'Bearer test-web-key' },
+        payload: {},
+      });
+      expect(logoutRes.statusCode).toBe(200);
+      expect(logoutRes.json().session_present).toBe(false);
     } finally {
       await wkHandle.close();
     }

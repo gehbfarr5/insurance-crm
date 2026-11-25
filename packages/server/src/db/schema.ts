@@ -271,3 +271,13 @@ export const auditLogs = pgTable('audit_logs', {
   metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const kjgxSessions = pgTable('kjgx_sessions', {
+  id: text('id').primaryKey(),
+  session_encrypted: bytea('session_encrypted').notNull(),
+  devicesn: text('devicesn').notNull(),
+  emp_no_prefix: text('emp_no_prefix'),
+  emp_name: text('emp_name'),
+  source: text('source').notNull().default('server_login'),
+  updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

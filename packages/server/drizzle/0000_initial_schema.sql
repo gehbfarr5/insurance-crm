@@ -321,3 +321,13 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs (entity_type, entity_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs (actor_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS kjgx_sessions (
+  id text PRIMARY KEY,
+  session_encrypted bytea NOT NULL,
+  devicesn text NOT NULL,
+  emp_no_prefix text,
+  emp_name text,
+  source text NOT NULL DEFAULT 'server_login',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);

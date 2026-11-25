@@ -32,6 +32,58 @@ export interface KhzxProbeResult {
   channel?: string;
 }
 
+export interface KhzxCaptchaResult {
+  verify_id: string;
+  image_data_url: string;
+}
+
+export interface KhzxLoginResult {
+  ok: boolean;
+  msgcode: string;
+  message: string;
+  needs_captcha?: boolean;
+  needs_sms?: boolean;
+  session?: KjgxSession;
+  emp_name?: string;
+  emp_no_prefix?: string;
+}
+
+export interface KhzxH5Fingerprint {
+  hash: string;
+  prefix: string;
+  script_count: number;
+  checked_at: string;
+}
+
+const KJGX_SM4_KEY = Buffer.from('2s3niLTbcTJgLHSQ6ND52Q==', 'base64');
+const KJGX_SM4_IV = Buffer.from('AxZRSfcze9dbz/maEUuptA==', 'base64');
+const KJGX_EMPNO_AES_KEY = Buffer.from('liaoruozhizhang1', 'utf8');
+
+export function md5Hex(plain: string): string {
+  return crypto.createHash('md5').update(plain, 'utf8').digest('hex');
+}
+
+export function sm4CbcEncrypt(plain: string): string {
+  if (!plain) return '';
+  const cipher = crypto.createCipheriv('sm4-cbc', KJGX_SM4_KEY, KJGX_SM4_IV);
+  cipher.setAutoPadding(true);
+  return Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]).toString('base64');
+}
+
+export function normalizeEmpNoForLogin(empNo: string): string {
+  const trimmed = empNo.trim();
+  return trimmed === 'XIMU66Xl' ? trimmed : trimmed.toUpperCase();
+}
+
+/** Replicates KJGX RN `aesEncrypt` (AES-128-ECB + PKCS7 -> uppercase hex). */
+export function empNoAesHexEncrypt(empNo: string): string {
+  const norm = normalizeEmpNoForLogin(empNo);
+  if (!norm) return '';
+  const cipher = crypto.createCipheriv('aes-128-ecb', KJGX_EMPNO_AES_KEY, null);
+  cipher.setAutoPadding(true);
+  return Buffer.concat([cipher.update(norm, 'utf8'), cipher.final()]).toString('hex').toUpperCase();
+}
+
 function cipherAlgorithmForKey(key: string): string {
   const byteLen = Buffer.byteLength(key, 'utf8');
   if (byteLen === 16) return 'aes-128-ecb';
@@ -350,7 +402,7 @@ export class KjgxSessionExpiredError extends Error {
 }
 
 export class KjgxDirectApiClient {
-  private cachedEncryptKey: { key: string; fetchedAt: number } | null = null;
+  private cachedKeyMaterial: { encryptStr: string; serverPublicKeyPem: string; fetchedAt: number } | null = null;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly keyTtlMs: number;
@@ -361,9 +413,12 @@ export class KjgxDirectApiClient {
     this.keyTtlMs = opts.keyTtlMs ?? 15 * 60_000;
   }
 
-  async establishEncryptKey(forceRefresh = false): Promise<string> {
-    if (!forceRefresh && this.cachedEncryptKey && Date.now() - this.cachedEncryptKey.fetchedAt < this.keyTtlMs) {
-      return this.cachedEncryptKey.key;
+  async establishKeyMaterial(forceRefresh = false): Promise<{ encryptStr: string; serverPublicKeyPem: string }> {
+    if (!forceRefresh && this.cachedKeyMaterial && Date.now() - this.cachedKeyMaterial.fetchedAt < this.keyTtlMs) {
+      return {
+        encryptStr: this.cachedKeyMaterial.encryptStr,
+        serverPublicKeyPem: this.cachedKeyMaterial.serverPublicKeyPem,
+      };
     }
 
     const r1Res = await this.fetchImpl(`${this.baseUrl}/display/api/apprsa/getrsa`, {
@@ -422,27 +477,39 @@ export class KjgxDirectApiClient {
       )
       .toString('utf8');
 
-    this.cachedEncryptKey = { key: encryptStr, fetchedAt: Date.now() };
-    return encryptStr;
+    this.cachedKeyMaterial = {
+      encryptStr,
+      serverPublicKeyPem: serverPubPem,
+      fetchedAt: Date.now(),
+    };
+    return { encryptStr, serverPublicKeyPem: serverPubPem };
+  }
+
+  async establishEncryptKey(forceRefresh = false): Promise<string> {
+    const mat = await this.establishKeyMaterial(forceRefresh);
+    return mat.encryptStr;
   }
 
   async postEncrypted<T = Record<string, unknown>>(
     path: string,
-    payload: Record<string, unknown>,
-    session: KjgxSession,
+    payload: Record<string, unknown> | string,
+    session?: KjgxSession,
     opts: { showPlain?: boolean } = {},
-  ): Promise<KhzxApiResponse<T>> {
+  ): Promise<KhzxApiResponse<T> & { raw: Record<string, unknown> }> {
     const encryptKey = await this.establishEncryptKey();
-    const encData = aesEcbEncrypt(JSON.stringify(payload), encryptKey);
+    const plainStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    const encData = aesEcbEncrypt(plainStr, encryptKey);
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      accesstoken: session.accesstoken,
-      empnoaes: session.empNoAES,
-      empNoAES: session.empNoAES,
+      accesstoken: session?.accesstoken ?? '',
+      empnoaes: session?.empNoAES ?? '',
       'Request-Encrypt': 'true',
     };
-    if (opts.showPlain !== false) {
+    if (session?.empNoAES) {
+      headers.empNoAES = session.empNoAES;
+    }
+    if (opts.showPlain !== false && session) {
       headers['X-Show-Plain'] = 'true';
     }
 
@@ -474,6 +541,159 @@ export class KjgxDirectApiClient {
       errorMsg: typeof decoded.errorMsg === 'string' ? decoded.errorMsg : undefined,
       result: decoded.result as number | string | undefined,
       content: decoded.content as T | undefined,
+      raw: decoded,
+    };
+  }
+
+  async checkLoginVerifyRequired(empNo: string): Promise<{ required: boolean; msgcode: string; statusField: string }> {
+    const resp = await this.postEncrypted('/emp/api/login/queryVerify', {
+      empNo: empNoAesHexEncrypt(empNo),
+    });
+    const msgcode = String(resp.raw.msgcode ?? resp.code ?? '');
+    const statusField = String(resp.raw.status ?? '');
+    return {
+      required: msgcode === '00' && statusField === '0',
+      msgcode,
+      statusField,
+    };
+  }
+
+  async fetchLoginCaptcha(): Promise<KhzxCaptchaResult> {
+    const resp = await this.postEncrypted('/behavior/api/getVerifyCode/getVerifyCode', '');
+    const msgCode = String(resp.raw.msgCode ?? resp.raw.msgcode ?? resp.code ?? '');
+    const verifyID = typeof resp.raw.verifyID === 'string' ? resp.raw.verifyID : '';
+    const verifyImg = typeof resp.raw.verifyImg === 'string' ? resp.raw.verifyImg : '';
+    if (msgCode !== '00' || !verifyID || !verifyImg) {
+      throw new Error(resp.errorMsg ?? resp.message ?? `获取图形验证码失败 (code=${msgCode})`);
+    }
+    return {
+      verify_id: verifyID,
+      image_data_url: verifyImg.startsWith('data:') ? verifyImg : `data:image/png;base64,${verifyImg}`,
+    };
+  }
+
+  async sendLoginSmsCode(empNo: string): Promise<{ ok: boolean; code: string; message: string }> {
+    const resp = await this.postEncrypted('/emp/api/login/sendLoginAuthCode', {
+      empNo: empNoAesHexEncrypt(empNo),
+    });
+    const code = resp.code ?? resp.msgcode ?? '';
+    return {
+      ok: code === '00',
+      code,
+      message: resp.message ?? resp.errorMsg ?? (code === '00' ? '短信验证码已发送' : '短信发送失败'),
+    };
+  }
+
+  async loginWithPassword(params: {
+    empNo: string;
+    password: string;
+    devicesn: string;
+    verifyId?: string;
+    verifyCode?: string;
+    mobilePhone?: string;
+    smsCode?: string;
+  }): Promise<KhzxLoginResult> {
+    const { encryptStr, serverPublicKeyPem } = await this.establishKeyMaterial();
+    const innerPayload = {
+      empNo: empNoAesHexEncrypt(params.empNo),
+      password: sm4CbcEncrypt(md5Hex(params.password)),
+      devicesn: params.devicesn,
+      pwd: sm4CbcEncrypt(params.password),
+      token: '',
+      mobilePhone: params.mobilePhone?.trim() ?? '',
+      mobileCheck: params.smsCode?.trim() ?? '',
+      uuid: params.verifyId?.trim() ?? '',
+      code: `Y_${params.verifyCode?.trim() ?? ''}`,
+    };
+
+    const reqAesKey = crypto.randomBytes(8).toString('hex');
+    const encData = aesEcbEncrypt(JSON.stringify(innerPayload), reqAesKey);
+    const ts = String(Date.now());
+    const reqUuid = crypto.randomUUID();
+    const digestHex = crypto.createHash('sha256').update(`${encData}${ts}${reqUuid}`, 'utf8').digest('hex');
+    const sign = crypto
+      .publicEncrypt(
+        { key: serverPublicKeyPem, padding: crypto.constants.RSA_PKCS1_PADDING },
+        Buffer.from(digestHex, 'utf8'),
+      )
+      .toString('base64');
+    const skey = crypto
+      .publicEncrypt(
+        { key: serverPublicKeyPem, padding: crypto.constants.RSA_PKCS1_PADDING },
+        Buffer.from(reqAesKey, 'utf8'),
+      )
+      .toString('base64');
+
+    const res = await this.fetchImpl(`${this.baseUrl}/emp/api/login/login`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'Request-Encrypt': 'true',
+        'Times-Tamp': ts,
+        Uuid: reqUuid,
+        Sign: sign,
+        Skey: skey,
+      },
+      body: JSON.stringify({ data: encData }),
+    });
+
+    const rawJson = (await res.json()) as Record<string, unknown>;
+    const respEncLogin = res.headers.get('response-encrypt-login') === 'true';
+    const respEnc = res.headers.get('response-encrypt') === 'true';
+    let decoded: Record<string, unknown> = rawJson;
+    if (respEncLogin && typeof rawJson.data === 'string') {
+      decoded = JSON.parse(aesEcbDecrypt(rawJson.data, reqAesKey)) as Record<string, unknown>;
+    } else if (respEnc && typeof rawJson.data === 'string') {
+      decoded = JSON.parse(aesEcbDecrypt(rawJson.data, encryptStr)) as Record<string, unknown>;
+    }
+
+    const msgcode = String(decoded.msgcode ?? decoded.code ?? '');
+    const message = String(decoded.errorMsg ?? decoded.message ?? '');
+    const loginEmp = (decoded.loginEmp ?? {}) as Record<string, unknown>;
+    const tok = typeof loginEmp.token === 'string' ? loginEmp.token.trim() : '';
+    const empAes = typeof loginEmp.empNoAES === 'string' ? loginEmp.empNoAES.trim() : '';
+    const empNo = typeof loginEmp.empNo === 'string' ? loginEmp.empNo.trim() : normalizeEmpNoForLogin(params.empNo);
+    const empName = typeof loginEmp.empName === 'string' ? loginEmp.empName.trim() : undefined;
+
+    if (['00', '0000', '42'].includes(msgcode) && tok && empAes) {
+      return {
+        ok: true,
+        msgcode,
+        message: message || '登录成功',
+        session: { accesstoken: tok, empNoAES: empAes, empNo },
+        emp_name: empName,
+        emp_no_prefix: empNo.slice(0, 4),
+      };
+    }
+
+    const msgLower = message.toLowerCase();
+    return {
+      ok: false,
+      msgcode: msgcode || 'ERR',
+      message: message || `登录失败 (${msgcode || res.status})`,
+      needs_captcha: msgLower.includes('验证码') || msgcode === '1002' || msgcode === '02',
+      needs_sms: msgLower.includes('短信') || msgLower.includes('动态密码') || msgLower.includes('设备'),
+    };
+  }
+
+  async fetchKhzxH5Fingerprint(): Promise<KhzxH5Fingerprint> {
+    const res = await this.fetchImpl(`${this.baseUrl}/khzx/`, { method: 'GET' });
+    if (!res.ok) {
+      throw new Error(`khzx H5 index HTTP ${res.status}`);
+    }
+    const html = await res.text();
+    const matches = html.match(/\/khzx\/static\/js\/[a-zA-Z0-9._-]+\.js/g) ?? [];
+    const scripts = Array.from(new Set(matches)).sort();
+    if (scripts.length === 0) {
+      throw new Error('khzx H5 HTML contained no script manifest');
+    }
+    const hash = crypto.createHash('sha256').update(scripts.join('\n'), 'utf8').digest('hex');
+    return {
+      hash,
+      prefix: hash.slice(0, 12),
+      script_count: scripts.length,
+      checked_at: new Date().toISOString(),
     };
   }
 

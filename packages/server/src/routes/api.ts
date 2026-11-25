@@ -281,6 +281,63 @@ export function registerApiRoutes(
 
     v1.post('/kjgx/worker/probe', async () => kjgxService.probeSession());
 
+    v1.post('/kjgx/worker/h5-check', async (_req, reply) => {
+      try {
+        return await kjgxService.checkH5Gate();
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.post('/kjgx/auth/captcha', async (req, reply) => {
+      try {
+        const body = z.object({ empNo: z.string().optional() }).optional().parse(req.body);
+        return await kjgxService.getLoginCaptcha(body?.empNo);
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.post('/kjgx/auth/sms', async (req, reply) => {
+      try {
+        const body = z.object({ empNo: z.string().min(1) }).parse(req.body);
+        return await kjgxService.sendLoginSms(body.empNo);
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.post('/kjgx/auth/login', async (req, reply) => {
+      try {
+        const body = z
+          .object({
+            empNo: z.string().min(1),
+            password: z.string().min(1),
+            verifyId: z.string().optional(),
+            verifyCode: z.string().optional(),
+            mobilePhone: z.string().optional(),
+            smsCode: z.string().optional(),
+            devicesn: z.string().optional(),
+          })
+          .parse(req.body);
+        const res = await kjgxService.loginDirect(body, actorOf(req));
+        if (!res.ok) {
+          return reply.code(400).send(res);
+        }
+        return res;
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.post('/kjgx/auth/logout', async (req, reply) => {
+      try {
+        return await kjgxService.logoutSession(actorOf(req));
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
     v1.post('/kjgx/jobs/:id/execute', async (req, reply) => {
       try {
         const { id } = req.params as { id: string };

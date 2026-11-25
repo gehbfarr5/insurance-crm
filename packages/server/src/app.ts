@@ -122,6 +122,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<{
     remindersSync.startAutoSync(Math.trunc(autoSyncSec));
   }
   const kjgxService = new KjgxWritebackService(store, opts.expectedBundleHash ?? process.env.KJGX_EXPECTED_BUNDLE_HASH ?? '');
+  await kjgxService.hydrateFromStore();
 
   const app = Fastify({ logger: opts.logger ?? false });
   await app.register(cors, { origin: true });

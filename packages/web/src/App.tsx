@@ -19,6 +19,7 @@ import {
   setBearerToken,
 } from './api.js';
 import { EditCustomerDialog } from './components/EditCustomerDialog.js';
+import { KjgxLoginDialog } from './components/KjgxLoginDialog.js';
 import { LogInteractionDialog } from './components/LogInteractionDialog.js';
 
 type NavTab = 'workbench' | 'customers' | 'detail' | 'sync' | 'staging';
@@ -81,6 +82,8 @@ export function App() {
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   const [editTarget, setEditTarget] = useState<Customer | null>(null);
   const [logTarget, setLogTarget] = useState<Customer | null>(null);
+  const [kjgxLoginOpen, setKjgxLoginOpen] = useState(false);
+  const [kjgxBusy, setKjgxBusy] = useState(false);
 
   const tablistRef = useRef<HTMLDivElement>(null);
   const panelRefs = useRef<Record<DetailTab, HTMLDivElement | null>>({
@@ -490,7 +493,7 @@ export function App() {
                               type="button"
                               onClick={async () => {
                                 await api.approveKjgxJob(j.id);
-                                setToast(`已放行 ${j.customer_name ?? ''} 的科技个险回写任务，等待 Pixel 3a 串行认领`);
+                                setToast(`已放行 ${j.customer_name ?? ''} 的科技个险回写任务，可在同步中心执行直连回写`);
                                 await refreshAll();
                               }}
                               className="px-2.5 py-1 rounded-md font-medium bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer"
@@ -1135,19 +1138,78 @@ export function App() {
                 <section className="split-grid grid grid-cols-2 gap-4">
                   <div className="bg-[var(--card)] border border-[var(--card-border)] rounded-xl p-4 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h2 className="text-sm font-semibold">科技个险回写队列</h2>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {workerStatus?.online && workerStatus.worker?.bundle_hash_matched ? (
-                          <span className="crm-badge crm-badge-success">
-                            Pixel 在线 ({workerStatus.worker.device_id} · v{workerStatus.worker.app_version} ·{' '}
-                            {workerStatus.worker.executor_ready ? '回写就绪' : '待命监控'})
+                      <div>
+                        <h2 className="text-sm font-semibold">科技个险回写队列</h2>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          {workerStatus?.session_present ? (
+                            <span className="crm-badge crm-badge-success">
+                              {workerStatus.session_source === 'server_login'
+                                ? `服务端直连就绪 (${workerStatus.emp_name ?? workerStatus.emp_no_prefix ?? '已登录'} · 无手机模式)`
+                                : `会话已同步 (${workerStatus.emp_name ?? workerStatus.emp_no_prefix ?? '有效'}${workerStatus.pixel_online && workerStatus.worker ? ` · ${workerStatus.worker.device_id}` : ''})`}
+                            </span>
+                          ) : workerStatus?.online && workerStatus.worker && !workerStatus.worker.bundle_hash_matched ? (
+                            <span className="crm-badge crm-badge-error">Pixel 在线 · OTA 哈希变更(已熔断)</span>
+                          ) : (
+                            <span className="crm-badge crm-badge-warning">未登录科技个险（点击右侧直接登录）</span>
+                          )}
+                          <span className="crm-badge crm-badge-primary">
+                            {workerStatus?.h5_gate?.armed
+                              ? `L0 H5 门禁 (${workerStatus.h5_gate.expected_prefix})`
+                              : '直连 khzx 加密 API + 强制回读'}
                           </span>
-                        ) : workerStatus?.online && workerStatus.worker ? (
-                          <span className="crm-badge crm-badge-error">Pixel 在线 · OTA 哈希变更(已熔断)</span>
-                        ) : (
-                          <span className="crm-badge crm-badge-warning">Pixel 离线 / 等待心跳</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setKjgxLoginOpen(true)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] font-medium cursor-pointer"
+                        >
+                          {workerStatus?.session_present ? '重新登录科技个险' : '登录科技个险'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={kjgxBusy}
+                          onClick={async () => {
+                            setKjgxBusy(true);
+                            try {
+                              const [probe, h5] = await Promise.all([
+                                api.probeKjgxWorker(),
+                                api.checkKjgxH5Gate().catch(() => null),
+                              ]);
+                              setToast(
+                                probe.ok
+                                  ? `科技个险会话有效 (${probe.emp_name ?? probe.emp_no_prefix ?? ''})${h5 ? ` · H5(${h5.prefix})` : ''}`
+                                  : `会话已过期或未登录：${probe.message}`,
+                              );
+                              await refreshAll();
+                            } finally {
+                              setKjgxBusy(false);
+                            }
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg border border-[var(--border)] cursor-pointer disabled:opacity-60"
+                        >
+                          {kjgxBusy ? '探测中…' : '探活'}
+                        </button>
+                        {workerStatus?.session_present && (
+                          <button
+                            type="button"
+                            disabled={kjgxBusy}
+                            onClick={async () => {
+                              setKjgxBusy(true);
+                              try {
+                                await api.logoutKjgx();
+                                setToast('已清除服务端科技个险会话');
+                                await refreshAll();
+                              } finally {
+                                setKjgxBusy(false);
+                              }
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg border border-[var(--border)] cursor-pointer disabled:opacity-60"
+                          >
+                            退出会话
+                          </button>
                         )}
-                        <span className="crm-badge crm-badge-primary">L0 OTA 门禁 + 强制回读</span>
                       </div>
                     </div>
                     {kjgxJobs.map((j) => (
@@ -1191,6 +1253,48 @@ export function App() {
                             </button>
                           </div>
                         )}
+                        {(j.approval_status === 'approved' || j.approval_status === 'auto_approved') &&
+                          j.execution_status === 'queued' && (
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                disabled={kjgxBusy}
+                                onClick={async () => {
+                                  setKjgxBusy(true);
+                                  try {
+                                    const res = await api.executeKjgxJob(j.id, true);
+                                    setToast(res.ok ? `演练通过（Dry-Run）：payload 已通过校验` : '演练未通过，请检查任务详情');
+                                  } catch (err) {
+                                    setToast(err instanceof Error ? err.message : '演练失败');
+                                  } finally {
+                                    setKjgxBusy(false);
+                                  }
+                                }}
+                                className="px-3 py-1.5 rounded-lg border border-[var(--border)] cursor-pointer disabled:opacity-60"
+                              >
+                                演练 (Dry-Run)
+                              </button>
+                              <button
+                                type="button"
+                                disabled={kjgxBusy}
+                                onClick={async () => {
+                                  setKjgxBusy(true);
+                                  try {
+                                    const res = await api.executeKjgxJob(j.id, false);
+                                    setToast(res.ok ? '直连回写并回读校验成功 ✓' : `回写失败：${res.job.receipt?.route_result ?? ''}`);
+                                    await refreshAll();
+                                  } catch (err) {
+                                    setToast(err instanceof Error ? err.message : '直连回写失败');
+                                  } finally {
+                                    setKjgxBusy(false);
+                                  }
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer disabled:opacity-60"
+                              >
+                                直连回写
+                              </button>
+                            </div>
+                          )}
                       </div>
                     ))}
                   </div>
@@ -1339,6 +1443,16 @@ export function App() {
           if (!logTarget) return;
           await api.logInteraction(logTarget.id, payload);
           setToast(`已写入 ${logTarget.name} 沟通记录`);
+          await refreshAll();
+        }}
+      />
+
+      <KjgxLoginDialog
+        open={kjgxLoginOpen}
+        initialEmpNoPrefix={workerStatus?.emp_no_prefix}
+        onClose={() => setKjgxLoginOpen(false)}
+        onSuccess={async (msg) => {
+          setToast(msg);
           await refreshAll();
         }}
       />

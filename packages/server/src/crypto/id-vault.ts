@@ -51,6 +51,20 @@ export class IdVault {
     return plain.toString('utf8');
   }
 
+  /** Encrypts arbitrary UTF-8 secrets (e.g. JSON session credentials) verbatim without ID normalization. */
+  encryptSecret(plaintext: string): Buffer {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.encKey, iv);
+    const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return Buffer.concat([iv, tag, ciphertext]);
+  }
+
+  /** Decrypts arbitrary UTF-8 secrets encrypted by `encryptSecret`. */
+  decryptSecret(blob: Buffer): string {
+    return this.decrypt(blob);
+  }
+
   hmac(plaintext: string): string {
     const norm = normalizeIdNo(plaintext);
     return crypto.createHmac('sha256', this.hmacKey).update(norm).digest('hex');
