@@ -338,8 +338,8 @@ describe('KjgxDirectApiClient & KjgxWritebackService', () => {
       }
       if (url.endsWith('/cuscenter/customer/saveCustomerController/saveCustomerInfo')) {
         savedRecord = {
-          id: 'cust-no-pixel-1',
-          customerId: 'cust-no-pixel-1',
+          id: 406806674,
+          customerId: 406806674,
           customerName: plainReq.customerName,
           phoneNo: plainReq.phoneNo,
           address: plainReq.address,
@@ -347,7 +347,7 @@ describe('KjgxDirectApiClient & KjgxWritebackService', () => {
           birthday: plainReq.birthday,
           remake: plainReq.remake,
         };
-        return respond({ code: '00', message: 'SUCCESS', content: 'cust-no-pixel-1' });
+        return respond({ code: '00', message: 'SUCCESS', content: 406806674 });
       }
       if (url.endsWith('/cuscenter/customer/CustomerDetailController/queryCustomerDetail')) {
         return respond({ code: '00', message: 'SUCCESS', content: savedRecord ?? {} });
@@ -413,6 +413,9 @@ describe('KjgxDirectApiClient & KjgxWritebackService', () => {
     expect(execRes.ok).toBe(true);
     expect(execRes.job.assigned_device).toBe('server-direct');
     expect(execRes.job.receipt?.readback_matched).toBe(true);
+    expect(execRes.job.receipt?.app_result?.addcustomerId).toBe('406806674');
+    const refreshed = await store.getCustomer360(customer.id);
+    expect(refreshed.customer.kjgx_db_customer_id).toBe('406806674');
 
     await svcRestarted.logoutSession(actor);
     expect(svcRestarted.getWorkerStatus().session_present).toBe(false);

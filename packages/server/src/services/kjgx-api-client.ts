@@ -842,7 +842,7 @@ export class KjgxDirectApiClient {
       };
     }
 
-    const writeResp = await this.postEncrypted<string | Record<string, unknown>>(
+    const writeResp = await this.postEncrypted<string | number | Record<string, unknown>>(
       built.endpoint,
       built.payload,
       session,
@@ -864,10 +864,21 @@ export class KjgxDirectApiClient {
       };
     }
 
-    const returnedId =
-      typeof writeResp.content === 'string' && writeResp.content.trim()
-        ? writeResp.content.trim()
-        : remoteCustomerId;
+    const extractReturnedId = (c: unknown): string => {
+      if (typeof c === 'number' && Number.isFinite(c)) return String(Math.trunc(c));
+      if (typeof c === 'string' && c.trim()) return c.trim();
+      if (c && typeof c === 'object') {
+        const obj = c as Record<string, unknown>;
+        for (const k of ['addcustomerId', 'customerId', 'id']) {
+          const v = obj[k];
+          if (typeof v === 'number' && Number.isFinite(v)) return String(Math.trunc(v));
+          if (typeof v === 'string' && v.trim()) return v.trim();
+        }
+      }
+      return '';
+    };
+
+    const returnedId = extractReturnedId(writeResp.content) || remoteCustomerId;
 
     if (!returnedId) {
       return {

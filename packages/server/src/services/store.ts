@@ -202,6 +202,7 @@ export interface CrmStore {
   }): Promise<void>;
   loadKjgxSession(): Promise<PersistedKjgxSession | null>;
   clearKjgxSession(): Promise<void>;
+  setCustomerKjgxDbId(customerId: string, kjgxDbCustomerId: string): Promise<void>;
   getDashboard(): Promise<{
     stats: {
       total_customers: number;
@@ -1136,6 +1137,18 @@ export class InMemoryDemoStore implements CrmStore {
 
   async clearKjgxSession(): Promise<void> {
     this.persistedKjgxSession = null;
+  }
+
+  async setCustomerKjgxDbId(customerId: string, kjgxDbCustomerId: string): Promise<void> {
+    const idx = this.customers.findIndex((c) => c.id === customerId && !c.deleted_at);
+    if (idx === -1) return;
+    const prev = this.customers[idx]!;
+    this.customers[idx] = {
+      ...prev,
+      kjgx_db_customer_id: kjgxDbCustomerId,
+      version: prev.version + 1,
+      updated_at: nowIso(),
+    };
   }
 
   async getDashboard() {
@@ -2476,6 +2489,16 @@ export class PostgresStore implements CrmStore {
   async clearKjgxSession(): Promise<void> {
     await this.ensureKjgxSessionsTable();
     await this.db.delete(kjgxSessions).where(eq(kjgxSessions.id, 'default'));
+  }
+
+  async setCustomerKjgxDbId(customerId: string, kjgxDbCustomerId: string): Promise<void> {
+    await this.db
+      .update(customers)
+      .set({
+        kjgx_db_customer_id: kjgxDbCustomerId,
+        version: sql`${customers.version} + 1`,
+      })
+      .where(and(eq(customers.id, customerId), isNull(customers.deleted_at)));
   }
 
   async getDashboard() {

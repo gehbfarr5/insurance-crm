@@ -590,7 +590,7 @@ export class KjgxWritebackService {
   async completeJob(jobId: string, rawReceipt: unknown, deviceId: string): Promise<KjgxWritebackJob> {
     const receipt = KjgxReceiptSchema.parse(rawReceipt);
     const succeeded = receipt.readback_matched === true;
-    return this.store.updateKjgxJob(
+    const updated = await this.store.updateKjgxJob(
       jobId,
       {
         execution_status: succeeded ? 'succeeded' : 'failed',
@@ -599,5 +599,12 @@ export class KjgxWritebackService {
       },
       { actorType: 'kjgx_worker', actorId: deviceId },
     );
+    if (succeeded && receipt.app_result && typeof receipt.app_result === 'object') {
+      const rawAddId = receipt.app_result.addcustomerId;
+      if (typeof rawAddId === 'number' || (typeof rawAddId === 'string' && rawAddId.trim())) {
+        await this.store.setCustomerKjgxDbId(updated.customer_id, String(rawAddId).trim());
+      }
+    }
+    return updated;
   }
 }
