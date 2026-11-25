@@ -134,6 +134,9 @@ export interface KjgxWorkerStatusResponse {
   session_updated_at?: string | null;
   emp_name?: string | null;
   emp_no_prefix?: string | null;
+  credentials_configured?: boolean;
+  configured_emp_prefix?: string | null;
+  configured_mobile_masked?: string | null;
   h5_gate?: {
     armed: boolean;
     expected_prefix: string | null;
@@ -275,14 +278,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(empNo ? { empNo } : {}),
     }),
-  sendKjgxSms: (empNo: string) =>
+  sendKjgxSms: (empNo?: string) =>
     req<{ ok: boolean; code: string; message: string }>('api/v1/kjgx/auth/sms', {
       method: 'POST',
-      body: JSON.stringify({ empNo }),
+      body: JSON.stringify(empNo ? { empNo } : {}),
     }),
   loginKjgx: async (body: {
-    empNo: string;
-    password: string;
+    empNo?: string;
+    password?: string;
     verifyId?: string;
     verifyCode?: string;
     mobilePhone?: string;
@@ -299,7 +302,17 @@ export const api = {
     if (res.status === 401) {
       throw new ApiUnauthorizedError('需要访问密钥登录');
     }
-    return res.json() as Promise<KjgxLoginResponse>;
+    const data = (await res.json()) as Partial<KjgxLoginResponse> & { error?: string };
+    if (!res.ok) {
+      return {
+        ok: false,
+        msgcode: data.msgcode ?? String(res.status),
+        message: data.message ?? data.error ?? '登录失败',
+        needs_captcha: data.needs_captcha,
+        needs_sms: data.needs_sms,
+      };
+    }
+    return data as KjgxLoginResponse;
   },
   logoutKjgx: () => req<{ ok: boolean; session_present: boolean }>('api/v1/kjgx/auth/logout', { method: 'POST', body: '{}' }),
   approveKjgxJob: (id: string) => req<KjgxWritebackJob>(`api/v1/kjgx/jobs/${id}/approve`, { method: 'POST', body: '{}' }),

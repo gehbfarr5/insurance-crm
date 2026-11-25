@@ -35,14 +35,21 @@ export class KjgxWritebackService {
   private serverDevicesn: string = process.env.KJGX_SERVER_DEVICESN?.trim() || 'crm-seoul-kjgx-01';
   private lastH5Check: { hash: string; prefix: string; matched: boolean; script_count: number; checked_at: string } | null = null;
   private readonly apiClient: KjgxDirectApiClient;
+  private readonly defaultEmpNo: string;
+  private readonly defaultPassword: string;
+  private readonly defaultMobilePhone: string;
 
   constructor(
     private readonly store: CrmStore,
     private readonly expectedBundleHash: string = process.env.KJGX_EXPECTED_BUNDLE_HASH ?? '',
     apiClient?: KjgxDirectApiClient,
     private readonly expectedH5Hash: string = process.env.KJGX_EXPECTED_H5_HASH ?? '',
+    managedCredentials?: { empNo?: string; password?: string; mobilePhone?: string },
   ) {
     this.apiClient = apiClient ?? new KjgxDirectApiClient();
+    this.defaultEmpNo = (managedCredentials?.empNo ?? process.env.KJGX_EMP_NO ?? '').trim();
+    this.defaultPassword = managedCredentials?.password ?? process.env.KJGX_PASSWORD ?? '';
+    this.defaultMobilePhone = (managedCredentials?.mobilePhone ?? process.env.KJGX_MOBILE_PHONE ?? '').trim();
   }
 
   private isGateArmed(): boolean {
@@ -132,7 +139,12 @@ export class KjgxWritebackService {
       this.lastHeartbeat && Date.now() - Date.parse(this.lastHeartbeat.last_seen_at) <= 120_000,
     );
     const sessionPresent = Boolean(this.liveSession?.accesstoken && this.liveSession?.empNoAES);
-    const online = pixelOnline || (sessionPresent && this.sessionSource === 'server_login');
+    const online = pixelOnline || sessionPresent;
+    const credentialsConfigured = Boolean(this.defaultEmpNo && this.defaultPassword);
+    const configuredMobileMasked =
+      this.defaultMobilePhone.length >= 7
+        ? `${this.defaultMobilePhone.slice(0, 3)}****${this.defaultMobilePhone.slice(-4)}`
+        : null;
     return {
       online,
       pixel_online: pixelOnline,
@@ -144,6 +156,9 @@ export class KjgxWritebackService {
       session_updated_at: sessionPresent ? this.sessionUpdatedAt : null,
       emp_name: sessionPresent ? this.empName : null,
       emp_no_prefix: sessionPresent ? this.empNoPrefix : null,
+      credentials_configured: credentialsConfigured,
+      configured_emp_prefix: this.defaultEmpNo ? this.defaultEmpNo.slice(0, 4) : null,
+      configured_mobile_masked: configuredMobileMasked,
       h5_gate: {
         armed: h5Armed,
         expected_prefix: h5Armed ? expectedH5.slice(0, 12) : null,
@@ -183,10 +198,11 @@ export class KjgxWritebackService {
 
   async getLoginCaptcha(empNo?: string) {
     const captcha = await this.apiClient.fetchLoginCaptcha();
+    const targetEmpNo = empNo?.trim() || this.defaultEmpNo;
     let verifyRequired = true;
-    if (empNo?.trim()) {
+    if (targetEmpNo) {
       try {
-        const chk = await this.apiClient.checkLoginVerifyRequired(empNo.trim());
+        const chk = await this.apiClient.checkLoginVerifyRequired(targetEmpNo);
         verifyRequired = chk.required;
       } catch {
         verifyRequired = true;
@@ -200,14 +216,18 @@ export class KjgxWritebackService {
     };
   }
 
-  async sendLoginSms(empNo: string) {
-    return this.apiClient.sendLoginSmsCode(empNo);
+  async sendLoginSms(empNo?: string) {
+    const targetEmpNo = empNo?.trim() || this.defaultEmpNo;
+    if (!targetEmpNo) {
+      throw new Error('缺少外勤工号，请先在服务端配置 KJGX_EMP_NO 或在请求中传入 empNo');
+    }
+    return this.apiClient.sendLoginSmsCode(targetEmpNo);
   }
 
   async loginDirect(
     params: {
-      empNo: string;
-      password: string;
+      empNo?: string;
+      password?: string;
       verifyId?: string;
       verifyCode?: string;
       mobilePhone?: string;
@@ -216,15 +236,29 @@ export class KjgxWritebackService {
     },
     actor: ActorContext,
   ) {
+    const empNo = params.empNo?.trim() || this.defaultEmpNo;
+    const password = params.password || this.defaultPassword;
+    const smsCode = params.smsCode?.trim() || '';
+    const mobilePhone = params.mobilePhone?.trim() || (smsCode ? this.defaultMobilePhone : '');
+    if (!empNo || !password) {
+      return {
+        ok: false as const,
+        msgcode: 'CONFIG_MISSING',
+        message: '服务端未配置托管账号或未输入工号密码',
+        needs_captcha: false,
+        needs_sms: false,
+      };
+    }
+
     const devicesn = params.devicesn?.trim() || this.serverDevicesn;
     const res = await this.apiClient.loginWithPassword({
-      empNo: params.empNo,
-      password: params.password,
+      empNo,
+      password,
       devicesn,
       verifyId: params.verifyId,
       verifyCode: params.verifyCode,
-      mobilePhone: params.mobilePhone,
-      smsCode: params.smsCode,
+      mobilePhone,
+      smsCode,
     });
 
     if (!res.ok || !res.session) {

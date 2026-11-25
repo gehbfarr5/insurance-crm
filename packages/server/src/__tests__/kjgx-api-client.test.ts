@@ -220,9 +220,10 @@ describe('KjgxDirectApiClient & KjgxWritebackService', () => {
     const sealed = vault.encryptSecret(secretPayload);
     expect(vault.decryptSecret(sealed)).toBe(secretPayload);
 
-    // SM4-CBC + empNo AES-128-ECB uppercase hex smoke check
+    // CPIC SM4Util (signed >> in ROTL) + empNo AES-128-ECB uppercase hex smoke check
     const sm4Out = sm4CbcEncrypt('test');
-    expect(sm4Out).toBe('2y+Epv1zwcfRktaZJyp1eg==');
+    expect(sm4Out).toBe('iNouNlhrgJ+CVrjkBaZ2mg==');
+    expect(sm4Out).not.toBe('2y+Epv1zwcfRktaZJyp1eg==');
     expect(empNoAesHexEncrypt('emp00001')).toMatch(/^[0-9A-F]{32}$/);
     expect(empNoAesHexEncrypt('emp00001')).toBe(empNoAesHexEncrypt('EMP00001'));
 
@@ -419,5 +420,42 @@ describe('KjgxDirectApiClient & KjgxWritebackService', () => {
 
     await svcRestarted.logoutSession(actor);
     expect(svcRestarted.getWorkerStatus().session_present).toBe(false);
+
+    // Server-managed single-account credentials mode: omit empNo/password/mobilePhone in calls & status
+    const svcManaged = new KjgxWritebackService(store, '', apiClient, h5.hash, {
+      empNo: 'emp00001',
+      password: 'SamplePass!123',
+      mobilePhone: '13800138000',
+    });
+    const managedStatus = svcManaged.getWorkerStatus();
+    expect(managedStatus.credentials_configured).toBe(true);
+    expect(managedStatus.configured_emp_prefix).toBe('emp0');
+    expect(managedStatus.configured_mobile_masked).toBe('138****8000');
+    const managedStatusStr = JSON.stringify(managedStatus);
+    expect(managedStatusStr).not.toContain('SamplePass!123');
+    expect(managedStatusStr).not.toContain('13800138000');
+    expect(managedStatusStr).not.toContain('emp00001');
+
+    const managedCaptcha = await svcManaged.getLoginCaptcha();
+    expect(managedCaptcha.verify_id).toBe('cap-uuid-123');
+    expect(managedCaptcha.verify_required).toBe(true);
+
+    const managedSms = await svcManaged.sendLoginSms();
+    expect(managedSms.ok).toBe(true);
+
+    const managedLogin = await svcManaged.loginDirect(
+      {
+        verifyId: 'cap-uuid-123',
+        verifyCode: 'ABCD',
+        smsCode: '654321',
+      },
+      actor,
+    );
+    expect(managedLogin.ok).toBe(true);
+    expect(lastLoginInner.empNo).toBe(empNoAesHexEncrypt('EMP00001'));
+    expect(lastLoginInner.password).toBe(sm4CbcEncrypt(md5Hex('SamplePass!123')));
+    expect(lastLoginInner.pwd).toBe(sm4CbcEncrypt('SamplePass!123'));
+    expect(lastLoginInner.mobilePhone).toBe('13800138000');
+    expect(lastLoginInner.mobileCheck).toBe('654321');
   });
 });

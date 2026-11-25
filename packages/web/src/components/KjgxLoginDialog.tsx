@@ -4,11 +4,22 @@ import { api } from '../api.js';
 interface Props {
   open: boolean;
   initialEmpNoPrefix?: string | null;
+  credentialsConfigured?: boolean;
+  configuredEmpPrefix?: string | null;
+  configuredMobileMasked?: string | null;
   onClose: () => void;
   onSuccess: (msg: string) => Promise<void> | void;
 }
 
-export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }: Props) {
+export function KjgxLoginDialog({
+  open,
+  initialEmpNoPrefix,
+  credentialsConfigured = false,
+  configuredEmpPrefix,
+  configuredMobileMasked,
+  onClose,
+  onSuccess,
+}: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const empId = useId();
@@ -24,6 +35,7 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
   const [verifyId, setVerifyId] = useState('');
   const [captchaImg, setCaptchaImg] = useState('');
   const [verifyCode, setVerifyCode] = useState('');
+  const [verifyRequired, setVerifyRequired] = useState(true);
   const [showSmsSection, setShowSmsSection] = useState(false);
   const [mobilePhone, setMobilePhone] = useState('');
   const [smsCode, setSmsCode] = useState('');
@@ -32,19 +44,24 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
   const [submitting, setSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
 
-  const loadCaptcha = useCallback(async (targetEmpNo?: string) => {
+  const loadCaptcha = useCallback(async (targetEmpNo?: string, opts?: { preserveStatus?: boolean }) => {
     setCaptchaBusy(true);
-    setStatusMsg(null);
+    if (!opts?.preserveStatus) {
+      setStatusMsg(null);
+    }
     try {
       const res = await api.getKjgxCaptcha(targetEmpNo?.trim() || undefined);
       setVerifyId(res.verify_id);
       setCaptchaImg(res.image_data_url);
+      setVerifyRequired(res.verify_required);
       setVerifyCode('');
     } catch (err) {
-      setStatusMsg({
-        kind: 'error',
-        text: err instanceof Error ? err.message : '拉取图形验证码失败，请重试',
-      });
+      if (!opts?.preserveStatus) {
+        setStatusMsg({
+          kind: 'error',
+          text: err instanceof Error ? err.message : '拉取图形验证码失败，请重试',
+        });
+      }
     } finally {
       setCaptchaBusy(false);
     }
@@ -59,17 +76,17 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
       setVerifyCode('');
       setSmsCode('');
       setStatusMsg(null);
-      if (!empNo && initialEmpNoPrefix && initialEmpNoPrefix.length > 4) {
+      if (!credentialsConfigured && !empNo && initialEmpNoPrefix && initialEmpNoPrefix.length > 4) {
         setEmpNo(initialEmpNoPrefix);
       }
       if (!dialog.open) {
         dialog.showModal();
       }
-      void loadCaptcha(empNo);
+      void loadCaptcha(credentialsConfigured ? undefined : empNo);
     } else if (dialog.open) {
       dialog.close();
     }
-  }, [open, initialEmpNoPrefix, loadCaptcha]);
+  }, [open, credentialsConfigured, initialEmpNoPrefix, loadCaptcha]);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -90,14 +107,14 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
 
   const handleSendSms = async () => {
     const trimmedEmp = empNo.trim();
-    if (!trimmedEmp) {
+    if (!credentialsConfigured && !trimmedEmp) {
       setStatusMsg({ kind: 'error', text: '请先输入工号后再发送短信验证码' });
       return;
     }
     setSmsBusy(true);
     setStatusMsg(null);
     try {
-      const res = await api.sendKjgxSms(trimmedEmp);
+      const res = await api.sendKjgxSms(credentialsConfigured ? undefined : trimmedEmp);
       setStatusMsg({
         kind: res.ok ? 'info' : 'error',
         text: res.message || (res.ok ? '短信验证码已发送，请查收' : '发送失败'),
@@ -118,23 +135,31 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
     setSubmitting(true);
     setStatusMsg(null);
     try {
-      const res = await api.loginKjgx({
-        empNo: empNo.trim(),
-        password,
-        verifyId: verifyId || undefined,
-        verifyCode: verifyCode.trim() || undefined,
-        mobilePhone: mobilePhone.trim() || undefined,
-        smsCode: smsCode.trim() || undefined,
-      });
+      const res = await api.loginKjgx(
+        credentialsConfigured
+          ? {
+              verifyId: verifyId || undefined,
+              verifyCode: verifyCode.trim() || undefined,
+              smsCode: smsCode.trim() || undefined,
+            }
+          : {
+              empNo: empNo.trim(),
+              password,
+              verifyId: verifyId || undefined,
+              verifyCode: verifyCode.trim() || undefined,
+              mobilePhone: mobilePhone.trim() || undefined,
+              smsCode: smsCode.trim() || undefined,
+            },
+      );
       if (!res.ok) {
         if (res.needs_sms) {
           setShowSmsSection(true);
         }
         setStatusMsg({
           kind: 'error',
-          text: res.message || '登录未成功，请核对工号、密码或验证码',
+          text: res.message || '登录未成功，请核对验证码或账号信息',
         });
-        void loadCaptcha(empNo);
+        void loadCaptcha(credentialsConfigured ? undefined : empNo, { preserveStatus: true });
         return;
       }
       setPassword('');
@@ -145,7 +170,7 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
         kind: 'error',
         text: err instanceof Error ? err.message : '登录请求异常，请重试',
       });
-      void loadCaptcha(empNo);
+      void loadCaptcha(credentialsConfigured ? undefined : empNo, { preserveStatus: true });
     } finally {
       setSubmitting(false);
     }
@@ -157,10 +182,12 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
         <div className="flex items-start justify-between gap-3 border-b border-[var(--card-border)] pb-3">
           <div>
             <h1 id={titleId} className="text-base font-semibold">
-              登录科技个险（服务端直连 · 无需手机）
+              {credentialsConfigured ? '验证并登录科技个险（已托管固定账号）' : '登录科技个险（服务端直连 · 无需手机）'}
             </h1>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              凭据仅用于本次加密登录交换，密码绝不保存；签发的会话令牌将通过 AES-256-GCM 持久化于首尔数据库
+              {credentialsConfigured
+                ? '系统已内置该唯一外勤账号与绑定手机号（服务端环境托管），仅需完成图形验证码或短信验证码校验'
+                : '凭据仅用于本次加密登录交换，密码绝不保存；签发的会话令牌将通过 AES-256-GCM 持久化于首尔数据库'}
             </p>
           </div>
           <button
@@ -174,69 +201,86 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
         </div>
 
         <div className="space-y-3 text-xs">
-          <div>
-            <label htmlFor={empId} className="block font-medium mb-1">
-              外勤工号 <span aria-hidden="true">*</span>
-            </label>
-            <input
-              id={empId}
-              name="kjgx_emp_no"
-              type="text"
-              autoFocus
-              required
-              autoComplete="username"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              enterKeyHint="next"
-              value={empNo}
-              onChange={(e) => setEmpNo(e.target.value)}
-              placeholder="请输入外勤工号"
-              className="w-full px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label htmlFor={pwdId} className="font-medium">
-                登录密码 <span aria-hidden="true">*</span>
-              </label>
-              <button
-                type="button"
-                aria-pressed={showPassword}
-                aria-describedby={pwdWarnId}
-                onClick={() => setShowPassword((v) => !v)}
-                className="text-[var(--link)] hover:underline cursor-pointer"
-              >
-                {showPassword ? '隐藏密码' : '显示密码'}
-              </button>
+          {credentialsConfigured ? (
+            <div className="p-2.5 rounded-lg bg-[var(--secondary)] border border-[var(--card-border)] flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium text-[var(--foreground)]">
+                已托管账号：{configuredEmpPrefix ?? '****'}**** · 绑定手机：{configuredMobileMasked ?? '已配置'}
+              </span>
+              <span className="crm-badge crm-badge-success">免输工号密码手机号</span>
             </div>
-            <span id={pwdWarnId} className="sr-only">
-              切换后将在屏幕上明文显示所输入的密码
-            </span>
-            <input
-              id={pwdId}
-              name="kjgx_password"
-              type={showPassword ? 'text' : 'password'}
-              required
-              autoComplete="current-password"
-              enterKeyHint="next"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
-            />
-          </div>
+          ) : (
+            <>
+              <div>
+                <label htmlFor={empId} className="block font-medium mb-1">
+                  外勤工号 <span aria-hidden="true">*</span>
+                </label>
+                <input
+                  id={empId}
+                  name="kjgx_emp_no"
+                  type="text"
+                  autoFocus
+                  required
+                  autoComplete="username"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  enterKeyHint="next"
+                  value={empNo}
+                  onChange={(e) => setEmpNo(e.target.value)}
+                  placeholder="请输入外勤工号"
+                  className="w-full px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor={pwdId} className="font-medium">
+                    登录密码 <span aria-hidden="true">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    aria-pressed={showPassword}
+                    aria-describedby={pwdWarnId}
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="text-[var(--link)] hover:underline cursor-pointer"
+                  >
+                    {showPassword ? '隐藏密码' : '显示密码'}
+                  </button>
+                </div>
+                <span id={pwdWarnId} className="sr-only">
+                  切换后将在屏幕上明文显示所输入的密码
+                </span>
+                <input
+                  id={pwdId}
+                  name="kjgx_password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  autoComplete="current-password"
+                  enterKeyHint="next"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
+                />
+              </div>
+            </>
+          )}
 
           <div>
             <label htmlFor={captchaId} className="block font-medium mb-1">
-              图形验证码 <span aria-hidden="true">*</span>
+              图形验证码{' '}
+              {verifyRequired ? (
+                <span aria-hidden="true">*</span>
+              ) : (
+                <span className="text-[var(--muted-foreground)] font-normal">(风控未强制，如提示需要再填)</span>
+              )}
             </label>
             <div className="flex flex-wrap items-center gap-2">
               <input
                 id={captchaId}
                 name="kjgx_captcha"
                 type="text"
-                required
+                autoFocus={credentialsConfigured}
+                required={verifyRequired}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="none"
@@ -261,7 +305,7 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
               <button
                 type="button"
                 disabled={captchaBusy}
-                onClick={() => void loadCaptcha(empNo)}
+                onClick={() => void loadCaptcha(credentialsConfigured ? undefined : empNo)}
                 className="px-2.5 py-2 rounded-lg border border-[var(--border)] cursor-pointer disabled:opacity-60"
               >
                 {captchaBusy ? '刷新中…' : '换一张'}
@@ -269,64 +313,96 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
             </div>
           </div>
 
-          <div>
-            <button
-              type="button"
-              aria-expanded={showSmsSection}
-              onClick={() => setShowSmsSection((v) => !v)}
-              className="text-[var(--link)] hover:underline cursor-pointer"
-            >
-              {showSmsSection ? '收起新设备短信校验 ▼' : '如提示需要短信动态码，点此展开 ▶'}
-            </button>
-            {showSmsSection && (
-              <div className="mt-2 p-3 rounded-lg bg-[var(--secondary)] space-y-2.5">
-                <div>
-                  <label htmlFor={phoneId} className="block font-medium mb-1">
-                    手机号（如系统要求）
-                  </label>
-                  <input
-                    id={phoneId}
-                    name="kjgx_mobile_phone"
-                    type="tel"
-                    autoComplete="tel-national"
-                    value={mobilePhone}
-                    onChange={(e) => setMobilePhone(e.target.value)}
-                    placeholder="选填"
-                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
-                  />
-                </div>
-                <div>
-                  <label htmlFor={smsId} className="block font-medium mb-1">
-                    短信验证码
-                  </label>
-                  <div className="flex items-center gap-2">
+          {credentialsConfigured ? (
+            <div className="p-3 rounded-lg bg-[var(--secondary)] space-y-2">
+              <label htmlFor={smsId} className="block font-medium">
+                短信验证码（如触发新设备/异地验证再填，自动发往绑定手机 {configuredMobileMasked ?? ''}）
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id={smsId}
+                  name="kjgx_sms_code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  value={smsCode}
+                  onChange={(e) => setSmsCode(e.target.value)}
+                  placeholder="6 位数字（需要时点右侧发送）"
+                  className="flex-1 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
+                />
+                <button
+                  type="button"
+                  disabled={smsBusy}
+                  onClick={() => void handleSendSms()}
+                  className="px-3 py-2 rounded-lg border border-[var(--border)] cursor-pointer disabled:opacity-60"
+                >
+                  {smsBusy ? '发送中…' : '发送短信码'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <button
+                type="button"
+                aria-expanded={showSmsSection}
+                onClick={() => setShowSmsSection((v) => !v)}
+                className="text-[var(--link)] hover:underline cursor-pointer"
+              >
+                {showSmsSection ? '收起新设备短信校验 ▼' : '如提示需要短信动态码，点此展开 ▶'}
+              </button>
+              {showSmsSection && (
+                <div className="mt-2 p-3 rounded-lg bg-[var(--secondary)] space-y-2.5">
+                  <div>
+                    <label htmlFor={phoneId} className="block font-medium mb-1">
+                      手机号（如系统要求）
+                    </label>
                     <input
-                      id={smsId}
-                      name="kjgx_sms_code"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      value={smsCode}
-                      onChange={(e) => setSmsCode(e.target.value)}
-                      placeholder="6 位数字"
-                      className="flex-1 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
+                      id={phoneId}
+                      name="kjgx_mobile_phone"
+                      type="tel"
+                      autoComplete="tel-national"
+                      value={mobilePhone}
+                      onChange={(e) => setMobilePhone(e.target.value)}
+                      placeholder="选填"
+                      className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
                     />
-                    <button
-                      type="button"
-                      disabled={smsBusy}
-                      onClick={() => void handleSendSms()}
-                      className="px-3 py-2 rounded-lg border border-[var(--border)] cursor-pointer disabled:opacity-60"
-                    >
-                      {smsBusy ? '发送中…' : '发送短信码'}
-                    </button>
+                  </div>
+                  <div>
+                    <label htmlFor={smsId} className="block font-medium mb-1">
+                      短信验证码
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id={smsId}
+                        name="kjgx_sms_code"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        value={smsCode}
+                        onChange={(e) => setSmsCode(e.target.value)}
+                        placeholder="6 位数字"
+                        className="flex-1 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] text-base"
+                      />
+                      <button
+                        type="button"
+                        disabled={smsBusy}
+                        onClick={() => void handleSendSms()}
+                        className="px-3 py-2 rounded-lg border border-[var(--border)] cursor-pointer disabled:opacity-60"
+                      >
+                        {smsBusy ? '发送中…' : '发送短信码'}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           <div role="status" aria-live="polite" className="min-h-[1.25rem]">
             {statusMsg && (
@@ -350,7 +426,13 @@ export function KjgxLoginDialog({ open, initialEmpNoPrefix, onClose, onSuccess }
             disabled={submitting}
             className="px-4 py-2 text-xs font-medium rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer disabled:opacity-60"
           >
-            {submitting ? '正在加密登录…' : '登录并保存会话'}
+            {submitting
+              ? credentialsConfigured
+                ? '正在验证登录…'
+                : '正在加密登录…'
+              : credentialsConfigured
+                ? '验证并登录'
+                : '登录并保存会话'}
           </button>
         </div>
       </form>

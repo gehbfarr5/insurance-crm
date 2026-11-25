@@ -300,8 +300,8 @@ export function registerApiRoutes(
 
     v1.post('/kjgx/auth/sms', async (req, reply) => {
       try {
-        const body = z.object({ empNo: z.string().min(1) }).parse(req.body);
-        return await kjgxService.sendLoginSms(body.empNo);
+        const body = z.object({ empNo: z.string().optional() }).optional().parse(req.body ?? {});
+        return await kjgxService.sendLoginSms(body?.empNo);
       } catch (err) {
         return handleRouteError(err, reply);
       }
@@ -311,17 +311,26 @@ export function registerApiRoutes(
       try {
         const body = z
           .object({
-            empNo: z.string().min(1),
-            password: z.string().min(1),
+            empNo: z.string().optional(),
+            password: z.string().optional(),
             verifyId: z.string().optional(),
             verifyCode: z.string().optional(),
             mobilePhone: z.string().optional(),
             smsCode: z.string().optional(),
             devicesn: z.string().optional(),
           })
-          .parse(req.body);
+          .parse(req.body ?? {});
         const res = await kjgxService.loginDirect(body, actorOf(req));
         if (!res.ok) {
+          req.log.warn(
+            {
+              msgcode: res.msgcode,
+              message: res.message,
+              needs_captcha: res.needs_captcha,
+              needs_sms: res.needs_sms,
+            },
+            'KJGX direct login failed',
+          );
           return reply.code(400).send(res);
         }
         return res;

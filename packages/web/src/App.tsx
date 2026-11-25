@@ -1145,7 +1145,9 @@ export function App() {
                             <span className="crm-badge crm-badge-success">
                               {workerStatus.session_source === 'server_login'
                                 ? `服务端直连就绪 (${workerStatus.emp_name ?? workerStatus.emp_no_prefix ?? '已登录'} · 无手机模式)`
-                                : `会话已同步 (${workerStatus.emp_name ?? workerStatus.emp_no_prefix ?? '有效'}${workerStatus.pixel_online && workerStatus.worker ? ` · ${workerStatus.worker.device_id}` : ''})`}
+                                : workerStatus.pixel_online && workerStatus.worker
+                                  ? `会话已同步 (${workerStatus.emp_name ?? workerStatus.emp_no_prefix ?? '有效'} · ${workerStatus.worker.device_id})`
+                                  : `持久化会话有效 (${workerStatus.emp_name ?? workerStatus.emp_no_prefix ?? '已就绪'} · 手机暂停中)`}
                             </span>
                           ) : workerStatus?.online && workerStatus.worker && !workerStatus.worker.bundle_hash_matched ? (
                             <span className="crm-badge crm-badge-error">Pixel 在线 · OTA 哈希变更(已熔断)</span>
@@ -1450,6 +1452,9 @@ export function App() {
       <KjgxLoginDialog
         open={kjgxLoginOpen}
         initialEmpNoPrefix={workerStatus?.emp_no_prefix}
+        credentialsConfigured={workerStatus?.credentials_configured}
+        configuredEmpPrefix={workerStatus?.configured_emp_prefix}
+        configuredMobileMasked={workerStatus?.configured_mobile_masked}
         onClose={() => setKjgxLoginOpen(false)}
         onSuccess={async (msg) => {
           setToast(msg);
