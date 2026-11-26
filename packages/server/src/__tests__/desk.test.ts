@@ -137,4 +137,45 @@ describe('Outbound-call desk: multi-dimension filtering, call stats and plaintex
     const row = all.items.find((i) => i.id === id)!;
     expect(row.id_no).toBe('110101199001011234');
   });
+
+  it('deletes an interaction record and decrements phone call_count', async () => {
+    const created = await handle.app.inject({
+      method: 'POST',
+      url: '/api/v1/customers',
+      headers: auth,
+      payload: { name: '删记录测试', primary_phone: '13922223333' },
+    });
+    expect(created.statusCode).toBe(201);
+    const { id } = created.json() as { id: string };
+
+    const logRes = await handle.app.inject({
+      method: 'POST',
+      url: `/api/v1/customers/${id}/interactions`,
+      headers: auth,
+      payload: { channel: 'phone', outcome: 'invited', summary: '误点邀约' },
+    });
+    expect(logRes.statusCode).toBe(201);
+    const interactionId = (logRes.json() as { interaction: { id: string } }).interaction.id;
+
+    const before = await desk();
+    expect(before.items.find((i) => i.id === id)!.call_count).toBe(1);
+
+    const delRes = await handle.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/interactions/${interactionId}`,
+      headers: auth,
+    });
+    expect(delRes.statusCode).toBe(200);
+    expect(delRes.json()).toEqual({ deleted: true, customer_id: id });
+
+    const after = await desk();
+    expect(after.items.find((i) => i.id === id)!.call_count).toBe(0);
+
+    const missing = await handle.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/interactions/${interactionId}`,
+      headers: auth,
+    });
+    expect(missing.statusCode).toBe(404);
+  });
 });

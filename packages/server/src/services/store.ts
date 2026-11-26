@@ -128,6 +128,7 @@ export interface CrmStore {
     input: CreateInteractionInput,
     actor: ActorContext,
   ): Promise<{ interaction: Interaction; followup?: Followup; kjgx_job?: KjgxWritebackJob }>;
+  deleteInteraction(interactionId: string, actor: ActorContext): Promise<{ deleted: true; customer_id: string }>;
 
   listFollowups(params?: { status?: string; customer_id?: string }): Promise<Followup[]>;
   upsertFollowup(input: UpsertFollowupInput, actor: ActorContext): Promise<Followup>;
@@ -616,6 +617,26 @@ export class InMemoryDemoStore implements CrmStore {
     });
 
     return { interaction, followup, kjgx_job: kjgxJob };
+  }
+
+  async deleteInteraction(interactionId: string, actor: ActorContext): Promise<{ deleted: true; customer_id: string }> {
+    const idx = this.interactions.findIndex((i) => i.id === interactionId);
+    if (idx === -1) throw new NotFoundError(`Interaction ${interactionId} not found`);
+    const [removed] = this.interactions.splice(idx, 1);
+    for (const f of this.followups) {
+      if (f.interaction_id === interactionId) f.interaction_id = null;
+    }
+    await this.appendAudit({
+      actor_type: actor.actorType,
+      actor_id: actor.actorId,
+      entity_type: 'interaction',
+      entity_id: removed!.id,
+      action: `删除沟通记录 (${removed!.outcome})`,
+      before_state: { customer_id: removed!.customer_id, channel: removed!.channel, outcome: removed!.outcome, summary: removed!.summary },
+      after_state: null,
+      metadata: {},
+    });
+    return { deleted: true, customer_id: removed!.customer_id };
   }
 
   async listFollowups(params?: { status?: string; customer_id?: string }): Promise<Followup[]> {
@@ -1732,6 +1753,25 @@ export class PostgresStore implements CrmStore {
     }
 
     return { interaction, followup, kjgx_job: kjgxJob };
+  }
+
+  async deleteInteraction(interactionId: string, actor: ActorContext): Promise<{ deleted: true; customer_id: string }> {
+    const [removed] = await this.db
+      .delete(interactions)
+      .where(eq(interactions.id, interactionId))
+      .returning();
+    if (!removed) throw new NotFoundError(`Interaction ${interactionId} not found`);
+    await this.appendAudit({
+      actor_type: actor.actorType,
+      actor_id: actor.actorId,
+      entity_type: 'interaction',
+      entity_id: removed.id,
+      action: `删除沟通记录 (${removed.outcome})`,
+      before_state: { customer_id: removed.customer_id, channel: removed.channel, outcome: removed.outcome, summary: removed.summary },
+      after_state: null,
+      metadata: {},
+    });
+    return { deleted: true, customer_id: removed.customer_id };
   }
 
   async listFollowups(params?: { status?: string; customer_id?: string }): Promise<Followup[]> {

@@ -1,6 +1,6 @@
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { LogOut, Moon, Sun } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ApiUnauthorizedError,
   type DashboardResponse,
@@ -15,6 +15,7 @@ import { KjgxCapsule, KjgxPanel } from './components/KjgxPanel.js';
 import { SyncPage } from './components/SyncPage.js';
 import { useKjgxConnection } from './lib/kjgx.js';
 import { useScheme } from './lib/theme.js';
+import { useTopLayerPopover } from './lib/top-layer.js';
 import { btnPrimary, inputCls } from './lib/ui.js';
 
 type Page = 'desk' | 'sync';
@@ -30,9 +31,11 @@ export function App() {
   const [kjgxOpen, setKjgxOpen] = useState(false);
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
+  const toastRef = useRef<HTMLDivElement>(null);
 
   const toast = useCallback((text: string) => setToastMsg({ id: Date.now(), text }), []);
   const onUnauthorized = useCallback(() => setAuth('required'), []);
+  useTopLayerPopover(toastRef, Boolean(toastMsg), toastMsg?.id);
 
   useEffect(() => {
     if (!toastMsg) return;
@@ -200,7 +203,12 @@ export function App() {
         onToast={toast}
       />
 
-      <div className="pointer-events-none fixed inset-x-0 top-14 z-[70] flex justify-center" aria-live="polite">
+      <div
+        ref={toastRef}
+        popover="manual"
+        className="top-toast-layer pointer-events-none fixed inset-x-0 top-14 flex justify-center"
+        aria-live="polite"
+      >
         <AnimatePresence>
           {toastMsg && (
             <motion.div
@@ -209,7 +217,7 @@ export function App() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -6, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 460, damping: 34 }}
-              className="pointer-events-auto max-w-[min(34rem,92vw)] rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-2 shadow-lg"
+              className="pointer-events-auto max-w-[min(34rem,92vw)] rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-[color:var(--foreground)] shadow-[0_12px_32px_-8px_rgb(0_0_0/0.22)]"
             >
               {toastMsg.text}
             </motion.div>

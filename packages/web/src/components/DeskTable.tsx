@@ -22,20 +22,20 @@ function QuickButton({
 }) {
   const cls =
     tone === 'primary'
-      ? 'border-transparent bg-[var(--primary)] text-[color:var(--primary-foreground)] hover:opacity-85'
+      ? 'border-transparent bg-[var(--primary)] text-[color:var(--primary-foreground)] hover:opacity-90'
       : tone === 'danger'
         ? 'border-[var(--border)] bg-[var(--card)] text-[color:var(--foreground)] hover:border-[var(--error)] hover:text-[color:var(--error)]'
         : 'border-[var(--border)] bg-[var(--card)] text-[color:var(--foreground)] hover:bg-[var(--secondary)]';
   return (
     <motion.button
       type="button"
-      whileTap={{ scale: 0.92 }}
+      whileTap={{ scale: 0.94 }}
       transition={{ type: 'spring', stiffness: 600, damping: 30 }}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
-      className={`h-7 cursor-pointer select-none rounded-md border px-2.5 text-[12.5px] font-medium transition-colors ${cls}`}
+      className={`h-7 cursor-pointer select-none rounded-lg border px-2.5 text-[12.5px] font-medium transition-colors ${cls}`}
     >
       {label}
     </motion.button>

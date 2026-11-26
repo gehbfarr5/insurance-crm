@@ -21,7 +21,8 @@ interface Pending {
   customer: DeskCustomer;
   outcome: QuickOutcome;
   snapshot: StatSnapshot;
-  timer: number;
+  timer: number | null;
+  paused: boolean;
   reason?: string;
 }
 
@@ -58,6 +59,7 @@ export function DeskPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [drawerTick, setDrawerTick] = useState(0);
   const [selected, setSelected] = useState<DeskCustomer | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pendingView, setPendingView] = useState<PendingView[]>([]);
@@ -103,6 +105,7 @@ export function DeskPage({
         key,
         name: p.customer.name,
         outcome: p.outcome,
+        paused: p.paused,
         note: p.outcome === 'invited' ? '信息卡已复制，可直接发给 MUSE' : undefined,
       })),
     );
@@ -112,24 +115,28 @@ export function DeskPage({
     setItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...snap } : x)));
   };
 
-  const commit = async (key: string) => {
-    const p = pendingRef.current.get(key);
-    if (!p) return;
-    window.clearTimeout(p.timer);
-    pendingRef.current.delete(key);
-    syncView();
-    try {
-      await api.logCall(p.customer.id, p.outcome, summaryFor(p.outcome, p.reason));
-    } catch (err) {
-      revert(p.customer.id, p.snapshot);
-      onToast(`记录失败：${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
+  const commit = useCallback(
+    async (key: string) => {
+      const p = pendingRef.current.get(key);
+      if (!p) return;
+      if (p.timer !== null) window.clearTimeout(p.timer);
+      pendingRef.current.delete(key);
+      syncView();
+      try {
+        await api.logCall(p.customer.id, p.outcome, summaryFor(p.outcome, p.reason));
+        setDrawerTick((t) => t + 1);
+      } catch (err) {
+        revert(p.customer.id, p.snapshot);
+        onToast(`记录失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [onToast],
+  );
 
   const undo = (key: string) => {
     const p = pendingRef.current.get(key);
     if (!p) return;
-    window.clearTimeout(p.timer);
+    if (p.timer !== null) window.clearTimeout(p.timer);
     pendingRef.current.delete(key);
     revert(p.customer.id, p.snapshot);
     syncView();
@@ -140,6 +147,20 @@ export function DeskPage({
     if (!p) return;
     p.reason = reason;
     void commit(key);
+  };
+
+  const handleHover = (key: string, hovered: boolean) => {
+    const p = pendingRef.current.get(key);
+    if (!p) return;
+    if (hovered) {
+      if (p.timer !== null) window.clearTimeout(p.timer);
+      p.timer = null;
+      p.paused = true;
+    } else {
+      p.paused = false;
+      p.timer = window.setTimeout(() => void commit(key), PENDING_MS);
+    }
+    syncView();
   };
 
   const copyInfoCard = async (c: DeskCustomer) => {
@@ -172,7 +193,7 @@ export function DeskPage({
       ),
     );
     const timer = window.setTimeout(() => void commit(key), PENDING_MS);
-    pendingRef.current.set(key, { customer: c, outcome, snapshot, timer });
+    pendingRef.current.set(key, { customer: c, outcome, snapshot, timer, paused: false });
     syncView();
     if (outcome === 'invited') void copyInfoCard(c);
   };
@@ -181,7 +202,7 @@ export function DeskPage({
   useEffect(() => {
     const flush = () => {
       for (const p of pendingRef.current.values()) {
-        window.clearTimeout(p.timer);
+        if (p.timer !== null) window.clearTimeout(p.timer);
         void api.logCall(p.customer.id, p.outcome, summaryFor(p.outcome, p.reason), true).catch(() => undefined);
       }
       pendingRef.current.clear();
@@ -255,8 +276,9 @@ export function DeskPage({
         sync={syncStatus}
         onToast={onToast}
         onChanged={() => setReloadKey((k) => k + 1)}
+        refreshSignal={drawerTick}
       />
-      <CallToasts pending={pendingView} onUndo={undo} onReason={setReason} />
+      <CallToasts pending={pendingView} onUndo={undo} onReason={setReason} onHover={handleHover} />
     </div>
   );
 }

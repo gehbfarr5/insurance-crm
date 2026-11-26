@@ -267,6 +267,10 @@ export const api = {
       body: JSON.stringify({ channel: 'phone', outcome, summary }),
       keepalive,
     }),
+  deleteInteraction: (id: string) =>
+    req<{ deleted: true; customer_id: string }>(`api/v1/interactions/${id}`, {
+      method: 'DELETE',
+    }),
   updateCustomer: (
     id: string,
     body: {

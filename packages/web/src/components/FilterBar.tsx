@@ -2,7 +2,7 @@ import type { CallFilter, DeskSortField } from '@insurance-crm/shared';
 import { ArrowDown, ArrowUp, RotateCcw, Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { ADDRESS_PRESETS, AGE_PRESETS, type DeskFilters, PREMIUM_PRESETS } from '../lib/desk-filters.js';
-import { btn, chipCls, inputCls } from '../lib/ui.js';
+import { btn, chipCls, inputCls, selectCls } from '../lib/ui.js';
 import { Segmented } from './Motion.js';
 
 const GENDER_OPTIONS = [
@@ -177,7 +177,7 @@ export function FilterBar({
             <select
               value={filters.sortBy}
               onChange={(e) => onChange({ sortBy: e.target.value as DeskSortField })}
-              className={`${inputCls} cursor-pointer pr-6`}
+              className={`${selectCls} pr-6`}
             >
               {SORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>

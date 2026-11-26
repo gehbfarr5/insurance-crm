@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { notifyTopLayerChanged } from './top-layer.js';
 
 let supportsDisplayTransition: boolean | undefined;
 
@@ -48,8 +49,12 @@ export function useDialogControl(open: boolean, onClose: () => void) {
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
-    else if (!open && d.open) void closeTopLayer(d);
+    if (open && !d.open) {
+      d.showModal();
+      notifyTopLayerChanged();
+    } else if (!open && d.open) {
+      void closeTopLayer(d);
+    }
   }, [open]);
 
   useEffect(() => {

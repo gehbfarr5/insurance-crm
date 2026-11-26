@@ -206,6 +206,15 @@ export function registerApiRoutes(
       }
     });
 
+    v1.delete('/interactions/:id', async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        return await store.deleteInteraction(id, actorOf(req));
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
     v1.get('/followups', async (req) => {
       const q = req.query as Record<string, string | undefined>;
       return store.listFollowups({ status: q.status, customer_id: q.customer_id });

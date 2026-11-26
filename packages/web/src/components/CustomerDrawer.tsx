@@ -1,10 +1,10 @@
 import type { DeskCustomer, Interaction } from '@insurance-crm/shared';
-import { Check, Contact, Copy, Pencil, X } from 'lucide-react';
+import { Check, Contact, Copy, Pencil, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { type Customer360Response, type SyncStatusResponse, api } from '../api.js';
 import { useDialogControl } from '../lib/dialog.js';
 import { buildInfoCard, CHANNEL_LABEL, copyText, fmtDateTime, fmtMoney, OUTCOME_LABEL } from '../lib/format.js';
-import { btn, btnPrimary, inputCls } from '../lib/ui.js';
+import { btn, btnPrimary, inputCls, selectCls } from '../lib/ui.js';
 import { CallSummary, QuickActions, type QuickOutcome } from './DeskTable.js';
 import { EditCustomerDialog } from './EditCustomerDialog.js';
 
@@ -38,6 +38,7 @@ export function CustomerDrawer({
   sync,
   onToast,
   onChanged,
+  refreshSignal = 0,
 }: {
   customer: DeskCustomer | null;
   open: boolean;
@@ -46,6 +47,7 @@ export function CustomerDrawer({
   sync: SyncStatusResponse | null;
   onToast: (msg: string) => void;
   onChanged: () => void;
+  refreshSignal?: number;
 }) {
   const { ref, close } = useDialogControl(open, onClose);
   const titleId = useId();
@@ -56,6 +58,8 @@ export function CustomerDrawer({
   const [noteKind, setNoteKind] = useState('note');
   const [noteText, setNoteText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const customerId = customer?.id;
 
@@ -64,7 +68,14 @@ export function CustomerDrawer({
     setNoteText('');
     setNoteKind('note');
     setCopied(false);
+    setConfirmDeleteId(null);
   }, [customerId]);
+
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const t = window.setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => window.clearTimeout(t);
+  }, [confirmDeleteId]);
 
   useEffect(() => {
     if (!open || !customerId) return;
@@ -78,7 +89,7 @@ export function CustomerDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, customerId, tick, onToast]);
+  }, [open, customerId, tick, refreshSignal, onToast]);
 
   const copyCard = useCallback(async () => {
     if (!detail || !customer) return;
@@ -122,6 +133,25 @@ export function CustomerDrawer({
     }
   };
 
+  const handleDeleteInteraction = async (interactionId: string) => {
+    if (confirmDeleteId !== interactionId) {
+      setConfirmDeleteId(interactionId);
+      return;
+    }
+    setDeletingId(interactionId);
+    try {
+      await api.deleteInteraction(interactionId);
+      setConfirmDeleteId(null);
+      setTick((t) => t + 1);
+      onChanged();
+      onToast('已删除沟通记录');
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const c = detail?.customer;
   const contactsEnabled = Boolean(sync?.contacts?.contacts_write_enabled);
 
@@ -147,7 +177,7 @@ export function CustomerDrawer({
                   onClick={close}
                   aria-label="关闭详情"
                   autoFocus
-                  className="grid size-8 cursor-pointer place-items-center rounded-md hover:bg-[var(--secondary)]"
+                  className="grid size-8 cursor-pointer place-items-center rounded-lg text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[color:var(--foreground)]"
                 >
                   <X className="size-4" />
                 </button>
@@ -227,7 +257,7 @@ export function CustomerDrawer({
                     aria-label="记录类型"
                     value={noteKind}
                     onChange={(e) => setNoteKind(e.target.value)}
-                    className={`${inputCls} cursor-pointer`}
+                    className={selectCls}
                   >
                     {NOTE_KINDS.map((k) => (
                       <option key={k.value} value={k.value}>
@@ -247,18 +277,38 @@ export function CustomerDrawer({
                   </button>
                 </form>
                 <ol className="space-y-2">
-                  {detail?.interactions.map((it) => (
-                    <li key={it.id} className="rounded-lg border border-[var(--card-border)] px-3 py-2">
-                      <div className="flex items-center justify-between gap-2 text-[12px] text-[color:var(--muted-foreground)]">
-                        <span>
-                          {CHANNEL_LABEL[it.channel] ?? it.channel} · {OUTCOME_LABEL[it.outcome] ?? it.outcome} ·{' '}
-                          {it.recorded_by_actor}
-                        </span>
-                        <span className="tnum">{fmtDateTime(it.occurred_at)}</span>
-                      </div>
-                      <p className="mt-0.5 whitespace-pre-wrap break-words">{it.summary}</p>
-                    </li>
-                  ))}
+                  {detail?.interactions.map((it) => {
+                    const confirming = confirmDeleteId === it.id;
+                    const deleting = deletingId === it.id;
+                    return (
+                      <li key={it.id} className="group rounded-lg border border-[var(--card-border)] px-3 py-2">
+                        <div className="flex items-center justify-between gap-2 text-[12px] text-[color:var(--muted-foreground)]">
+                          <span>
+                            {CHANNEL_LABEL[it.channel] ?? it.channel} · {OUTCOME_LABEL[it.outcome] ?? it.outcome} ·{' '}
+                            {it.recorded_by_actor}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="tnum">{fmtDateTime(it.occurred_at)}</span>
+                            <button
+                              type="button"
+                              disabled={deleting}
+                              onClick={() => void handleDeleteInteraction(it.id)}
+                              aria-label={confirming ? '确认删除此记录' : '删除此记录'}
+                              className={`inline-flex h-6 cursor-pointer items-center gap-1 rounded px-1.5 text-[11.5px] transition-colors ${
+                                confirming
+                                  ? 'bg-[var(--error)] font-medium text-white'
+                                  : 'text-[color:var(--muted-foreground)] opacity-75 hover:bg-[var(--secondary)] hover:text-[color:var(--error)] hover:opacity-100'
+                              }`}
+                            >
+                              <Trash2 className="size-3" />
+                              {confirming ? (deleting ? '删除中…' : '确认删除') : '删除'}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="mt-0.5 whitespace-pre-wrap break-words">{it.summary}</p>
+                      </li>
+                    );
+                  })}
                   {detail && detail.interactions.length === 0 && (
                     <li className="text-[color:var(--muted-foreground)]">暂无沟通记录</li>
                   )}
@@ -276,7 +326,7 @@ export function CustomerDrawer({
         onSave={async (patch) => {
           if (!c) return;
           await api.updateCustomer(c.id, { expected_version: c.version, ...patch });
-          onToast(`已保存 ${c.name} 资料${patch.enqueue_kjgx_writeback ? '，并生成科技个险回写草稿' : ''}`);
+          onToast(`已保存 ${c.name} 资料${patch.enqueue_kjgx_writeback ? '，并生成科技个险回写任务' : ''}`);
           setTick((t) => t + 1);
           onChanged();
         }}
