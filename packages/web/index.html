@@ -2,12 +2,15 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="theme-color" content="#1f4e8c" />
-  <link rel="manifest" href="./manifest.webmanifest" />
-  <title>保顾客户中枢 · Insurance CRM</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <script>
+    try {
+      document.querySelector('meta[name="color-scheme"]').content =
+        localStorage.getItem('color-scheme') === 'dark' ? 'dark' : 'light';
+    } catch (e) {}
+  </script>
+  <title>保顾 CRM</title>
 </head>
 <body>
   <div id="root"></div>

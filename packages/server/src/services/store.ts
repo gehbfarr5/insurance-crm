@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import {
   type AuditLogEntry,
+  type CallStats,
   type Campaign,
   type CampaignMember,
   type CreateCustomerInput,
@@ -17,6 +18,7 @@ import {
   type SyncConflict,
   type UpdateCustomerInput,
   type UpsertFollowupInput,
+  aggregateCallStats,
   normalizePhone,
 } from '@insurance-crm/shared';
 import { and, desc, eq, gte, ilike, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
@@ -184,6 +186,7 @@ export interface CrmStore {
   rejectStaging(stagingId: string, actor: ActorContext): Promise<ImportStagingItem>;
 
   getDecryptedIdMap(customerIds: string[]): Promise<Map<string, string>>;
+  getPhoneCallStats(): Promise<Map<string, CallStats>>;
   listPoliciesByCustomerIds(customerIds: string[]): Promise<Map<string, Policy[]>>;
   listRecentInteractionsByCustomerIds(
     customerIds: string[],
@@ -273,6 +276,19 @@ export class InMemoryDemoStore implements CrmStore {
     this.conflicts = seed.conflicts;
     this.stagingItems = seed.stagingItems;
     this.auditLogs = seed.auditLogs;
+  }
+
+  async getPhoneCallStats(): Promise<Map<string, CallStats>> {
+    return aggregateCallStats(
+      this.interactions
+        .filter((i) => i.channel === 'phone')
+        .map((i) => ({
+          customer_id: i.customer_id,
+          occurred_at: i.occurred_at,
+          outcome: i.outcome,
+          summary: i.summary,
+        })),
+    );
   }
 
   async searchCustomers(params: SearchCustomersParams) {
@@ -1349,6 +1365,26 @@ export class PostgresStore implements CrmStore {
       )
     `);
     this.kjgxSessionsTableReady = true;
+  }
+
+  async getPhoneCallStats(): Promise<Map<string, CallStats>> {
+    const rows = await this.db
+      .select({
+        customer_id: interactions.customer_id,
+        occurred_at: interactions.occurred_at,
+        outcome: interactions.outcome,
+        summary: interactions.summary,
+      })
+      .from(interactions)
+      .where(eq(interactions.channel, 'phone'));
+    return aggregateCallStats(
+      rows.map((r) => ({
+        customer_id: r.customer_id,
+        occurred_at: r.occurred_at.toISOString(),
+        outcome: r.outcome as Interaction['outcome'],
+        summary: r.summary,
+      })),
+    );
   }
 
   async searchCustomers(params: SearchCustomersParams) {

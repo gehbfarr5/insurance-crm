@@ -9,6 +9,7 @@ import {
 } from '@insurance-crm/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { queryDesk } from '../services/desk.js';
 import { IcloudWriteLockedError, type IcloudSyncService } from '../services/icloud-sync.js';
 import type { KjgxWritebackService } from '../services/kjgx-worker-api.js';
 import type { RemindersSyncService } from '../services/reminders-sync.js';
@@ -142,10 +143,39 @@ export function registerApiRoutes(
       }
     });
 
+    v1.get('/desk/customers', async (req, reply) => {
+      try {
+        const q = req.query as Record<string, string | undefined>;
+        const num = (v: string | undefined) => {
+          if (v === undefined || v.trim() === '') return undefined;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : undefined;
+        };
+        return await queryDesk(store, {
+          query: q.query,
+          gender: q.gender,
+          min_age: num(q.min_age),
+          max_age: num(q.max_age),
+          min_premium: num(q.min_premium),
+          max_premium: num(q.max_premium),
+          address_query: q.address_query,
+          call_filter: q.call_filter,
+          sort_by: q.sort_by,
+          sort_dir: q.sort_dir,
+          limit: num(q.limit),
+          offset: num(q.offset),
+        });
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
     v1.get('/customers/:id', async (req, reply) => {
       try {
         const { id } = req.params as { id: string };
-        return await store.getCustomer360(id);
+        const detail = await store.getCustomer360(id);
+        const idMap = await store.getDecryptedIdMap([id]);
+        return { ...detail, customer: { ...detail.customer, id_no: idMap.get(id) ?? null } };
       } catch (err) {
         return handleRouteError(err, reply);
       }

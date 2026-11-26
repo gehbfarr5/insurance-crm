@@ -88,7 +88,7 @@ export function EditCustomerDialog({ customer, open, onClose, onSave }: Props) {
             <h1 id="edit-dialog-title" className="text-base font-semibold">
               编辑客户资料（{customer?.name ?? ''}）
             </h1>
-            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+            <p className="text-xs text-[color:var(--muted-foreground)] mt-0.5">
               保存后同步更新主库与 iCloud 队列，并按需生成科技个险回写 Diff
             </p>
           </div>
@@ -114,7 +114,7 @@ export function EditCustomerDialog({ customer, open, onClose, onSave }: Props) {
               required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[color:var(--foreground)]"
             />
           </div>
           <div>
@@ -126,7 +126,7 @@ export function EditCustomerDialog({ customer, open, onClose, onSave }: Props) {
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[color:var(--foreground)]"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -139,7 +139,7 @@ export function EditCustomerDialog({ customer, open, onClose, onSave }: Props) {
                 type="date"
                 value={birthday}
                 onChange={(e) => setBirthday(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[color:var(--foreground)]"
               />
             </div>
             <div>
@@ -150,7 +150,7 @@ export function EditCustomerDialog({ customer, open, onClose, onSave }: Props) {
                 id="dlg-rapport"
                 value={rapport}
                 onChange={(e) => setRapport(e.target.value as Customer['rapport_tag'])}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-[color:var(--foreground)]"
               >
                 <option value="friendly">沟通顺畅 / 和气</option>
                 <option value="neutral">中性待观察</option>
@@ -178,7 +178,7 @@ export function EditCustomerDialog({ customer, open, onClose, onSave }: Props) {
           <button
             type="submit"
             value="save"
-            className="px-3.5 py-2 text-xs font-medium rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] cursor-pointer"
+            className="px-3.5 py-2 text-xs font-medium rounded-lg bg-[var(--primary)] text-[color:var(--primary-foreground)] cursor-pointer"
           >
             保存并生成回写草稿
           </button>

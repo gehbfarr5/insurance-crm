@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@insurance-crm/shared": "workspace:*",
+    "lucide-react": "^1.80.0",
+    "motion": "^14.14.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

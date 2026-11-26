@@ -3,6 +3,7 @@ import type {
   Campaign,
   CampaignMember,
   Customer,
+  DeskResponse,
   ExternalLink,
   Followup,
   ImportStagingItem,
@@ -47,13 +48,28 @@ export interface DashboardResponse {
 }
 
 export interface Customer360Response {
-  customer: Customer;
+  customer: Customer & { id_no?: string | null };
   policies: Policy[];
   interactions: Interaction[];
   followups: Followup[];
   external_links: ExternalLink[];
   pending_jobs: KjgxWritebackJob[];
   open_conflicts: SyncConflict[];
+}
+
+export interface DeskQueryParams {
+  query?: string;
+  gender?: string;
+  min_age?: number;
+  max_age?: number;
+  min_premium?: number;
+  max_premium?: number;
+  address_query?: string;
+  call_filter?: string;
+  sort_by?: string;
+  sort_dir?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export type CampaignWithMembers = Campaign & {
@@ -238,6 +254,19 @@ export const api = {
     return req<{ customers: Customer[]; total: number; truncated: boolean }>(`api/v1/customers${q ? `?${q}` : ''}`);
   },
   getCustomer360: (id: string) => req<Customer360Response>(`api/v1/customers/${id}`),
+  getDeskCustomers: (p: DeskQueryParams) => {
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries(p)) {
+      if (v !== undefined && v !== '') sp.set(k, String(v));
+    }
+    return req<DeskResponse>(`api/v1/desk/customers?${sp.toString()}`);
+  },
+  logCall: (id: string, outcome: 'no_answer' | 'rejected' | 'invited', summary: string, keepalive = false) =>
+    req(`api/v1/customers/${id}/interactions`, {
+      method: 'POST',
+      body: JSON.stringify({ channel: 'phone', outcome, summary }),
+      keepalive,
+    }),
   updateCustomer: (
     id: string,
     body: {
