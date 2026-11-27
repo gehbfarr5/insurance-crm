@@ -35,10 +35,10 @@ export function DeskCardList({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-baseline gap-2">
-                  <span className="truncate text-[15px] font-semibold text-[color:var(--foreground)]">{c.name}</span>
-                  {bio && <span className="shrink-0 text-[12px] text-[color:var(--muted-foreground)]">{bio}</span>}
+                  <span className="truncate text-[16px] font-semibold text-[color:var(--foreground)]">{c.name}</span>
+                  {bio && <span className="shrink-0 text-[13px] text-[color:var(--muted-foreground)]">{bio}</span>}
                 </div>
-                <p className="mt-0.5 truncate text-[12.5px] text-[color:var(--muted-foreground)]">
+                <p className="mt-0.5 truncate text-[13px] text-[color:var(--muted-foreground)]">
                   {c.address || '未填写居住地址'}
                 </p>
               </div>
@@ -47,12 +47,12 @@ export function DeskCardList({
                   {fmtMoney(c.total_premium)}
                 </div>
                 {c.policy_total > 0 && (
-                  <div className="text-[11.5px] text-[color:var(--muted-foreground)]">{c.policy_total} 张保单</div>
+                  <div className="text-[13px] text-[color:var(--muted-foreground)]">{c.policy_total} 张保单</div>
                 )}
               </div>
             </div>
 
-            <div className="text-[12.5px]">
+            <div className="text-[13px]">
               <CallSummary c={c} />
             </div>
 

@@ -84,7 +84,7 @@ export function App() {
         >
           <div>
             <h1 className="text-[16px] font-semibold">保顾 CRM</h1>
-            <p className="text-[12.5px] text-[color:var(--muted-foreground)]">输入访问密钥，仅保存在当前浏览器</p>
+            <p className="text-[13px] text-[color:var(--muted-foreground)]">输入访问密钥，仅保存在当前浏览器</p>
           </div>
           {loginError && (
             <div role="alert" className="text-[color:var(--error)]">
@@ -92,7 +92,7 @@ export function App() {
             </div>
           )}
           <label className="block space-y-1">
-            <span className="text-[12px] text-[color:var(--muted-foreground)]">访问密钥</span>
+            <span className="text-[13px] text-[color:var(--muted-foreground)]">访问密钥</span>
             <input
               type="password"
               required
@@ -121,7 +121,7 @@ export function App() {
     <MotionConfig reducedMotion="user">
       <header className="sticky top-0 z-40 flex h-12 items-center justify-between gap-2 border-b border-[var(--card-border)] bg-[color-mix(in_srgb,var(--card)_88%,transparent)] px-3.5 backdrop-blur md:gap-4 md:px-6">
         <div className="flex h-full min-w-0 items-center gap-3 md:gap-8">
-          <span className="shrink-0 whitespace-nowrap text-[14px] font-semibold tracking-tight">保顾 CRM</span>
+          <span className="shrink-0 whitespace-nowrap text-[16px] font-semibold tracking-tight">保顾 CRM</span>
           <nav aria-label="主导航" className="flex h-full items-center gap-0.5 md:gap-1">
             {NAV.map((n) => (
               <button
@@ -129,7 +129,7 @@ export function App() {
                 type="button"
                 aria-current={page === n.id ? 'page' : undefined}
                 onClick={() => goto(n.id)}
-                className={`relative flex h-full shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap px-2 text-[12.5px] transition-colors md:px-3 md:text-[13px] ${
+                className={`relative flex h-full shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap px-2 text-[13px] transition-colors md:px-3 ${
                   page === n.id
                     ? 'font-medium text-[color:var(--foreground)]'
                     : 'text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]'
@@ -137,7 +137,7 @@ export function App() {
               >
                 {n.label}
                 {n.id === 'sync' && pendingCount > 0 && (
-                  <span className="tnum rounded-full bg-[var(--primary)] px-1.5 text-[11px] text-[color:var(--primary-foreground)]">
+                  <span className="tnum inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--primary)] px-1.5 text-[13px] font-medium text-[color:var(--primary-foreground)]">
                     {pendingCount}
                   </span>
                 )}
@@ -158,7 +158,7 @@ export function App() {
             type="button"
             onClick={toggle}
             aria-label={scheme === 'dark' ? '切换到浅色' : '切换到深色'}
-            className="grid size-8 cursor-pointer place-items-center rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--secondary)]"
+            className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--secondary)]"
           >
             {scheme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </button>
@@ -171,7 +171,7 @@ export function App() {
               }}
               aria-label="退出登录"
               title="退出登录"
-              className="grid size-8 cursor-pointer place-items-center rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--secondary)]"
+              className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--secondary)]"
             >
               <LogOut className="size-4" />
             </button>

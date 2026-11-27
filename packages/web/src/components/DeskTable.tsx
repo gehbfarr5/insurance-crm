@@ -36,7 +36,7 @@ function QuickButton({
         e.stopPropagation();
         onClick();
       }}
-      className={`h-7 shrink-0 cursor-pointer select-none whitespace-nowrap rounded-lg border px-2.5 text-[12.5px] font-medium transition-colors ${cls}`}
+      className={`touch-action h-7 shrink-0 cursor-pointer select-none whitespace-nowrap rounded-lg border px-2.5 text-[13px] font-medium transition-colors ${cls}`}
     >
       {label}
     </motion.button>
@@ -60,13 +60,13 @@ export function CallSummary({ c }: { c: DeskCustomer }) {
         <RollingNumber value={c.call_count} /> <span className="font-normal text-[color:var(--muted-foreground)]">次</span>
       </span>
       {c.last_call_at && c.last_call_outcome && (
-        <span className="whitespace-nowrap text-[12px] text-[color:var(--muted-foreground)]">
+        <span className="whitespace-nowrap text-[13px] text-[color:var(--muted-foreground)]">
           {relTime(c.last_call_at)} ·{' '}
           <span className={OUTCOME_TONE[c.last_call_outcome] ?? ''}>{OUTCOME_LABEL[c.last_call_outcome]}</span>
         </span>
       )}
       {c.ever_rejected && c.last_call_outcome !== 'rejected' && (
-        <span className="whitespace-nowrap rounded-full border border-[var(--card-border)] px-1.5 text-[11px] text-[color:var(--error)]">
+        <span className="whitespace-nowrap text-[13px] font-medium text-[color:var(--error)]">
           曾拒绝
         </span>
       )}
@@ -97,7 +97,7 @@ export function DialLink({
       className={
         compact
           ? 'tnum inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 font-medium text-[color:var(--foreground)] transition-colors hover:bg-[var(--card)]'
-          : 'tnum inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--secondary)] px-2.5 text-[12.5px] font-medium text-[color:var(--foreground)] transition-colors active:scale-[0.97]'
+          : 'tnum inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--secondary)] px-3 text-[13px] font-medium text-[color:var(--foreground)] transition-colors active:scale-[0.97]'
       }
     >
       <Phone className="size-3.5 shrink-0 text-[color:var(--muted-foreground)]" aria-hidden="true" />
@@ -120,7 +120,13 @@ export function DeskTable({
   onDial: (c: DeskCustomer) => void;
 }) {
   return (
-    <div className="desk-scroll hidden min-h-0 flex-1 md:block" aria-busy={loading}>
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label="客户列表"
+      className="desk-scroll hidden min-h-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:block"
+      aria-busy={loading}
+    >
       <table className="desk-table">
         <caption className="sr-only">客户筛选与外呼列表</caption>
         <thead>
@@ -156,14 +162,14 @@ export function DeskTable({
                 >
                   {c.name}
                 </button>
-                <div className="text-[12px] text-[color:var(--muted-foreground)]">
+                <div className="text-[13px] text-[color:var(--muted-foreground)]">
                   {[c.gender !== '未知' ? c.gender : '', c.age != null ? `${c.age}岁` : ''].filter(Boolean).join(' · ') || '—'}
                 </div>
               </td>
               <td className="text-right">
                 <div className="tnum font-medium">{fmtMoney(c.total_premium)}</div>
                 {c.policy_total > 0 && (
-                  <div className="text-[12px] text-[color:var(--muted-foreground)]">{c.policy_total} 张保单</div>
+                  <div className="text-[13px] text-[color:var(--muted-foreground)]">{c.policy_total} 张保单</div>
                 )}
               </td>
               <td className="max-w-[20rem]">

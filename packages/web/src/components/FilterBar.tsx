@@ -131,21 +131,22 @@ export function FilterBar({
               placeholder="最大"
               className={`${inputCls} tnum w-14 text-center`}
             />
-            {AGE_PRESETS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                aria-pressed={filters.minAge === p.min && filters.maxAge === p.max}
-                onClick={() =>
-                  filters.minAge === p.min && filters.maxAge === p.max
-                    ? onChange({ minAge: '', maxAge: '' })
-                    : onChange({ minAge: p.min, maxAge: p.max })
-                }
-                className={chipCls(filters.minAge === p.min && filters.maxAge === p.max)}
-              >
-                {p.label}
-              </button>
-            ))}
+            <select
+              aria-label="年龄预设"
+              value={AGE_PRESETS.find((p) => p.min === filters.minAge && p.max === filters.maxAge)?.label ?? ''}
+              onChange={(e) => {
+                const found = AGE_PRESETS.find((p) => p.label === e.target.value);
+                onChange(found ? { minAge: found.min, maxAge: found.max } : { minAge: '', maxAge: '' });
+              }}
+              className={`${selectCls} pr-6`}
+            >
+              <option value="">快捷年龄</option>
+              {AGE_PRESETS.map((p) => (
+                <option key={p.label} value={p.label}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
 
@@ -168,21 +169,23 @@ export function FilterBar({
               placeholder="最高"
               className={`${inputCls} tnum w-16 text-center`}
             />
-            <span className="text-[12px] text-[color:var(--muted-foreground)]">万</span>
-            {PREMIUM_PRESETS.map((p) => {
-              const active = filters.minWan === p.min && filters.maxWan === p.max;
-              return (
-                <button
-                  key={p.label}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => (active ? onChange({ minWan: '', maxWan: '' }) : onChange({ minWan: p.min, maxWan: p.max }))}
-                  className={chipCls(active)}
-                >
+            <span className="text-[13px] text-[color:var(--muted-foreground)]">万</span>
+            <select
+              aria-label="保费预设"
+              value={PREMIUM_PRESETS.find((p) => p.min === filters.minWan && p.max === filters.maxWan)?.label ?? ''}
+              onChange={(e) => {
+                const found = PREMIUM_PRESETS.find((p) => p.label === e.target.value);
+                onChange(found ? { minWan: found.min, maxWan: found.max } : { minWan: '', maxWan: '' });
+              }}
+              className={`${selectCls} pr-6`}
+            >
+              <option value="">快捷保费</option>
+              {PREMIUM_PRESETS.map((p) => (
+                <option key={p.label} value={p.label}>
                   {p.label}
-                </button>
-              );
-            })}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="地址">
             <input
@@ -192,17 +195,19 @@ export function FilterBar({
               placeholder="关键词"
               className={`${inputCls} w-32`}
             />
-            {ADDRESS_PRESETS.map((a) => (
-              <button
-                key={a}
-                type="button"
-                aria-pressed={filters.address === a}
-                onClick={() => onChange({ address: filters.address === a ? '' : a })}
-                className={chipCls(filters.address === a)}
-              >
-                {a}
-              </button>
-            ))}
+            <select
+              aria-label="常用区域"
+              value={ADDRESS_PRESETS.includes(filters.address as (typeof ADDRESS_PRESETS)[number]) ? filters.address : ''}
+              onChange={(e) => onChange({ address: e.target.value })}
+              className={`${selectCls} pr-6`}
+            >
+              <option value="">常用区域</option>
+              {ADDRESS_PRESETS.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
 
@@ -216,7 +221,7 @@ export function FilterBar({
             />
           </Field>
           <div className="flex items-center gap-1.5">
-            <label className="flex items-center gap-2 text-[12px] text-[color:var(--muted-foreground)]">
+            <label className="flex items-center gap-2 text-[13px] text-[color:var(--muted-foreground)]">
               排序
               <select
                 value={filters.sortBy}
@@ -271,7 +276,7 @@ export function FilterBar({
             <SlidersHorizontal className="size-3.5" />
             <span>筛选</span>
             {activeChips.length > 0 && (
-              <span className="tnum inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[11px] font-medium text-[color:var(--primary-foreground)]">
+              <span className="tnum inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[13px] font-medium text-[color:var(--primary-foreground)]">
                 {activeChips.length}
               </span>
             )}
@@ -285,16 +290,16 @@ export function FilterBar({
                 key={ch.key}
                 type="button"
                 onClick={ch.clear}
-                className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--secondary)] px-2.5 text-[12px] text-[color:var(--foreground)]"
+                className="touch-action inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--secondary)] px-3 text-[13px] text-[color:var(--foreground)]"
               >
                 <span>{ch.label}</span>
-                <X className="size-3 text-[color:var(--muted-foreground)]" />
+                <X className="size-3.5 text-[color:var(--muted-foreground)]" />
               </button>
             ))}
             <button
               type="button"
               onClick={onReset}
-              className="shrink-0 cursor-pointer px-1.5 text-[12px] text-[color:var(--muted-foreground)]"
+              className="touch-action shrink-0 cursor-pointer px-2 text-[13px] text-[color:var(--muted-foreground)]"
             >
               清空
             </button>
@@ -306,7 +311,7 @@ export function FilterBar({
       <dialog ref={ref} className="bottom-sheet" aria-labelledby={sheetTitleId}>
         <div className="flex flex-col">
           <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--card-border)] bg-[var(--card)] px-4 py-3">
-            <h2 id={sheetTitleId} className="text-[15px] font-semibold">
+            <h2 id={sheetTitleId} className="text-[16px] font-semibold">
               筛选与排序
             </h2>
             <div className="flex items-center gap-2">
@@ -318,7 +323,7 @@ export function FilterBar({
                 type="button"
                 onClick={close}
                 aria-label="关闭筛选"
-                className="grid size-8 cursor-pointer place-items-center rounded-lg text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)]"
+                className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-lg text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)]"
               >
                 <X className="size-4" />
               </button>
@@ -327,7 +332,7 @@ export function FilterBar({
 
           <div className="space-y-4 px-4 py-4">
             <div className="space-y-1.5">
-              <div className="text-[12px] font-medium text-[color:var(--muted-foreground)]">性别</div>
+              <div className="text-[13px] font-medium text-[color:var(--muted-foreground)]">性别</div>
               <Segmented
                 label="性别"
                 value={filters.gender}
@@ -337,7 +342,7 @@ export function FilterBar({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[12px] font-medium text-[color:var(--muted-foreground)]">年龄（周岁）</div>
+              <div className="text-[13px] font-medium text-[color:var(--muted-foreground)]">年龄（周岁）</div>
               <div className="flex items-center gap-2">
                 <input
                   aria-label="最小年龄"
@@ -375,7 +380,7 @@ export function FilterBar({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[12px] font-medium text-[color:var(--muted-foreground)]">总保费（万元）</div>
+              <div className="text-[13px] font-medium text-[color:var(--muted-foreground)]">总保费（万元）</div>
               <div className="flex items-center gap-2">
                 <input
                   aria-label="最低保费（万）"
@@ -413,7 +418,7 @@ export function FilterBar({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[12px] font-medium text-[color:var(--muted-foreground)]">居住地址</div>
+              <div className="text-[13px] font-medium text-[color:var(--muted-foreground)]">居住地址</div>
               <input
                 aria-label="居住地址关键词"
                 value={filters.address}
@@ -436,7 +441,7 @@ export function FilterBar({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[12px] font-medium text-[color:var(--muted-foreground)]">外呼防重呼状态</div>
+              <div className="text-[13px] font-medium text-[color:var(--muted-foreground)]">外呼防重呼状态</div>
               <div className="flex flex-wrap gap-1.5">
                 {CALL_OPTIONS.map((o) => (
                   <button
@@ -452,7 +457,7 @@ export function FilterBar({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[12px] font-medium text-[color:var(--muted-foreground)]">排序方式</div>
+              <div className="text-[13px] font-medium text-[color:var(--muted-foreground)]">排序方式</div>
               <div className="flex items-center gap-2">
                 <select
                   value={filters.sortBy}

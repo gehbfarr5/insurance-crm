@@ -32,7 +32,7 @@ export function KjgxCapsule({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 text-[12px] transition-colors hover:bg-[var(--secondary)] sm:gap-2 sm:px-3 sm:text-[12.5px]"
+      className="touch-icon-hit inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 text-[13px] transition-colors hover:bg-[var(--secondary)] sm:gap-2 sm:px-3"
     >
       <motion.span
         aria-hidden="true"

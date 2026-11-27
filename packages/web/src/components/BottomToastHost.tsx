@@ -37,7 +37,9 @@ export function BottomToastHost() {
     <div
       ref={ref}
       popover="manual"
-      className="top-toast-layer pointer-events-none fixed inset-x-0 bottom-4 flex flex-col items-center gap-2 px-3"
+      role="region"
+      aria-label="操作提示"
+      className="top-toast-layer pointer-events-none fixed inset-x-0 flex flex-col items-center gap-2 px-3"
       aria-live="polite"
     >
       <AnimatePresence initial={false}>
@@ -51,6 +53,10 @@ export function BottomToastHost() {
             transition={{ type: 'spring', stiffness: 420, damping: 32 }}
             onMouseEnter={() => hoverToast(it.id, true)}
             onMouseLeave={() => hoverToast(it.id, false)}
+            onFocus={() => hoverToast(it.id, true)}
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) hoverToast(it.id, false);
+            }}
             className="pointer-events-auto relative w-[min(32rem,100%)] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-[0_12px_32px_-8px_rgb(0_0_0/0.24)]"
           >
             {it.dialCustomer ? (
@@ -67,7 +73,7 @@ export function BottomToastHost() {
                     type="button"
                     onClick={() => dismissToast(it.id)}
                     aria-label="忽略"
-                    className="grid size-7 cursor-pointer place-items-center rounded-md text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)]"
+                    className="touch-icon-hit grid size-7 cursor-pointer place-items-center rounded-md text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)]"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -76,15 +82,15 @@ export function BottomToastHost() {
             ) : (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5">
                 <span className="font-medium text-[color:var(--foreground)]">{it.text}</span>
-                {it.note && <span className="text-[12px] text-[color:var(--muted-foreground)]">{it.note}</span>}
+                {it.note && <span className="text-[13px] text-[color:var(--muted-foreground)]">{it.note}</span>}
                 {it.reasonChips && (
-                  <span className="flex flex-wrap items-center gap-1">
+                  <span className="flex flex-wrap items-center gap-1.5">
                     {it.reasonChips.map((r) => (
                       <button
                         key={r}
                         type="button"
                         onClick={() => chooseToastReason(it.id, r)}
-                        className="h-6 cursor-pointer rounded-full border border-[var(--card-border)] bg-[var(--secondary)] px-2.5 text-[12px] text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--foreground)]"
+                        className="touch-action h-7 cursor-pointer rounded-full border border-[var(--card-border)] bg-[var(--secondary)] px-3 text-[13px] text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--foreground)]"
                       >
                         {r}
                       </button>
@@ -95,7 +101,7 @@ export function BottomToastHost() {
                   <button
                     type="button"
                     onClick={() => undoToast(it.id)}
-                    className="ml-auto inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-[12.5px] font-medium text-[color:var(--foreground)] hover:bg-[var(--secondary)]"
+                    className="touch-action ml-auto inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2.5 text-[13px] font-medium text-[color:var(--foreground)] hover:bg-[var(--secondary)]"
                   >
                     <Undo2 className="size-3.5" />
                     {it.undoLabel ?? '撤销'}

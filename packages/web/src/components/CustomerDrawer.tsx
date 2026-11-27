@@ -25,7 +25,7 @@ const NOTE_KINDS: ReadonlyArray<{
 function Fact({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[12px] text-[color:var(--muted-foreground)]">{label}</dt>
+      <dt className="text-[13px] text-[color:var(--muted-foreground)]">{label}</dt>
       <dd className="tnum break-words font-medium">{value || '—'}</dd>
     </div>
   );
@@ -171,10 +171,10 @@ export function CustomerDrawer({
             <header className="sticky top-0 z-10 space-y-3 border-b border-[var(--card-border)] bg-[var(--card)] px-4 py-3.5 md:px-6 md:py-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 id={titleId} className="text-[17px] font-semibold">
+                  <h2 id={titleId} className="text-[16px] font-semibold">
                     {customer.name}
                   </h2>
-                  <p className="text-[12.5px] text-[color:var(--muted-foreground)]">
+                  <p className="text-[13px] text-[color:var(--muted-foreground)]">
                     {[customer.gender !== '未知' ? customer.gender : '', customer.age != null ? `${customer.age}岁` : '']
                       .filter(Boolean)
                       .join(' · ') || '资料待补全'}
@@ -185,7 +185,7 @@ export function CustomerDrawer({
                   onClick={close}
                   aria-label="关闭详情"
                   autoFocus
-                  className="grid size-8 cursor-pointer place-items-center rounded-lg text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[color:var(--foreground)]"
+                  className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-lg text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[color:var(--foreground)]"
                 >
                   <X className="size-4" />
                 </button>
@@ -219,7 +219,7 @@ export function CustomerDrawer({
             <div className="space-y-6 px-4 py-4 md:px-6 md:py-5">
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
                 <div className="min-w-0">
-                  <dt className="text-[12px] text-[color:var(--muted-foreground)]">手机（点击直接拨号）</dt>
+                  <dt className="text-[13px] text-[color:var(--muted-foreground)]">手机（点击直接拨号）</dt>
                   <dd className="mt-0.5 flex items-center gap-1.5">
                     {customer.primary_phone ? (
                       <>
@@ -239,7 +239,7 @@ export function CustomerDrawer({
                               onToast(ok ? `已复制 ${customer.primary_phone}` : '复制失败'),
                             )
                           }
-                          className="grid size-6 cursor-pointer place-items-center rounded text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[color:var(--foreground)]"
+                          className="touch-icon-hit grid size-6 cursor-pointer place-items-center rounded text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[color:var(--foreground)]"
                         >
                           <Copy className="size-3" />
                         </button>
@@ -265,14 +265,14 @@ export function CustomerDrawer({
               </dl>
 
               <section aria-label="保单明细" className="space-y-2">
-                <h3 className="text-[12px] font-medium text-[color:var(--muted-foreground)]">保单明细</h3>
+                <h3 className="text-[13px] font-medium text-[color:var(--muted-foreground)]">保单明细</h3>
                 {detail && detail.policies.length === 0 && <p className="text-[color:var(--muted-foreground)]">暂无保单</p>}
-                <ul className="divide-y divide-[var(--card-border)] rounded-lg border border-[var(--card-border)]">
+                <ul className="divide-y divide-[var(--card-border)] border-y border-[var(--card-border)]">
                   {detail?.policies.map((p) => (
-                    <li key={p.id} className="flex items-start justify-between gap-3 px-3 py-2.5">
+                    <li key={p.id} className="flex items-start justify-between gap-3 py-2.5">
                       <div className="min-w-0">
                         <div className="truncate font-medium">{p.product_name ?? '未命名险种'}</div>
-                        <div className="tnum text-[12px] text-[color:var(--muted-foreground)]">
+                        <div className="tnum text-[13px] text-[color:var(--muted-foreground)]">
                           {p.policy_no} · {p.holder_role}
                         </div>
                       </div>
@@ -283,7 +283,7 @@ export function CustomerDrawer({
               </section>
 
               <section aria-label="沟通记录" className="space-y-3">
-                <h3 className="text-[12px] font-medium text-[color:var(--muted-foreground)]">沟通记录</h3>
+                <h3 className="text-[13px] font-medium text-[color:var(--muted-foreground)]">沟通记录</h3>
                 <form
                   className="flex flex-wrap items-center gap-2"
                   onSubmit={(e) => {
@@ -314,13 +314,13 @@ export function CustomerDrawer({
                     保存
                   </button>
                 </form>
-                <ol className="space-y-2">
+                <ol className="divide-y divide-[var(--card-border)] border-y border-[var(--card-border)]">
                   {detail?.interactions
                     .filter((it) => !pendingDeleteIds.has(it.id))
                     .map((it) => (
-                      <li key={it.id} className="rounded-lg border border-[var(--card-border)] px-3 py-2.5">
+                      <li key={it.id} className="py-3">
                         <div className="flex items-start justify-between gap-2">
-                          <span className="text-[12px] text-[color:var(--muted-foreground)]">
+                          <span className="text-[13px] text-[color:var(--muted-foreground)]">
                             {CHANNEL_LABEL[it.channel] ?? it.channel} · {OUTCOME_LABEL[it.outcome] ?? it.outcome} ·{' '}
                             {it.recorded_by_actor}
                           </span>
@@ -328,22 +328,22 @@ export function CustomerDrawer({
                             type="button"
                             onClick={() => handleDeleteInteraction(it)}
                             aria-label="删除此记录"
-                            className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 text-[11.5px] text-[color:var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[color:var(--error)]"
+                            className="touch-icon-hit inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 text-[13px] text-[color:var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[color:var(--error)]"
                           >
-                            <Trash2 className="size-3" />
+                            <Trash2 className="size-3.5" />
                             删除
                           </button>
                         </div>
                         <p className="mt-1 whitespace-pre-wrap break-words">{it.summary}</p>
                         <div className="mt-1.5 flex justify-end">
-                          <span className="tnum text-[11.5px] text-[color:var(--muted-foreground)]">
+                          <span className="tnum text-[13px] text-[color:var(--muted-foreground)]">
                             {fmtDateTime(it.occurred_at)}
                           </span>
                         </div>
                       </li>
                     ))}
                   {detail && detail.interactions.filter((it) => !pendingDeleteIds.has(it.id)).length === 0 && (
-                    <li className="text-[color:var(--muted-foreground)]">暂无沟通记录</li>
+                    <li className="py-3 text-[color:var(--muted-foreground)]">暂无沟通记录</li>
                   )}
                 </ol>
               </section>

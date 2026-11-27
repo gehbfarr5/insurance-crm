@@ -33,7 +33,7 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
   return (
     <section className="rounded-xl border border-[var(--card-border)] bg-[var(--card)]">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--card-border)] px-5 py-3">
-        <h2 className="text-[14px] font-semibold">{title}</h2>
+        <h2 className="text-[16px] font-semibold">{title}</h2>
         {aside}
       </header>
       <div className="p-5">{children}</div>
@@ -79,7 +79,7 @@ function JobsSection({ onToast, onChanged }: { onToast: (m: string) => void; onC
       title="科技个险回写队列"
       aside={
         <div className="flex items-center gap-2">
-          {h5 && <span className="text-[12px] text-[color:var(--muted-foreground)]">{h5}</span>}
+          {h5 && <span className="text-[13px] text-[color:var(--muted-foreground)]">{h5}</span>}
           <button
             type="button"
             className={btn}
@@ -99,14 +99,14 @@ function JobsSection({ onToast, onChanged }: { onToast: (m: string) => void; onC
       }
     >
       {open.length === 0 && <p className="text-[color:var(--muted-foreground)]">没有待处理的回写任务</p>}
-      <ul className="space-y-3">
+      <ul className="divide-y divide-[var(--card-border)]">
         {open.map((j) => (
-          <li key={j.id} className="space-y-2.5 rounded-lg border border-[var(--card-border)] p-3.5">
+          <li key={j.id} className="space-y-2.5 py-3.5 first:pt-0 last:pb-0">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">
                 {j.customer_name ?? j.customer_id} · {JOB_TYPE_LABEL[j.job_type] ?? j.job_type}
               </span>
-              <span className="text-[12px] text-[color:var(--muted-foreground)]">
+              <span className="text-[13px] text-[color:var(--muted-foreground)]">
                 {APPROVAL_LABEL[j.approval_status] ?? j.approval_status} · {EXEC_LABEL[j.execution_status] ?? j.execution_status}
               </span>
             </div>
