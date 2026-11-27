@@ -79,7 +79,7 @@ export type CampaignWithMembers = Campaign & {
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getBearerToken();
   const headers: Record<string, string> = {
-    'content-type': 'application/json',
+    ...(init?.body !== undefined ? { 'content-type': 'application/json' } : {}),
     ...(init?.headers as Record<string, string> | undefined),
   };
   if (token) headers.authorization = `Bearer ${token}`;
