@@ -191,6 +191,15 @@ export function registerApiRoutes(
       }
     });
 
+    v1.delete('/customers/:id', async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        return await store.deleteCustomer(id, actorOf(req));
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
     v1.post('/customers/:id/interactions', async (req, reply) => {
       try {
         const { id } = req.params as { id: string };

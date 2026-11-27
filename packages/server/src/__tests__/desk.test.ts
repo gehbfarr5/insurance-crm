@@ -178,4 +178,32 @@ describe('Outbound-call desk: multi-dimension filtering, call stats and plaintex
     });
     expect(missing.statusCode).toBe(404);
   });
+
+  it('soft-deletes a customer and excludes them from desk and 360', async () => {
+    const created = await handle.app.inject({
+      method: 'POST',
+      url: '/api/v1/customers',
+      headers: auth,
+      payload: { name: '删客户测试', primary_phone: '13933334444' },
+    });
+    expect(created.statusCode).toBe(201);
+    const { id } = created.json() as { id: string };
+
+    const delRes = await handle.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/customers/${id}`,
+      headers: auth,
+    });
+    expect(delRes.statusCode).toBe(200);
+    expect(delRes.json()).toEqual({ deleted: true, id });
+
+    const after = await desk();
+    expect(after.items.find((i) => i.id === id)).toBeUndefined();
+
+    const get360 = await handle.app.inject({ method: 'GET', url: `/api/v1/customers/${id}`, headers: auth });
+    expect(get360.statusCode).toBe(404);
+
+    const delAgain = await handle.app.inject({ method: 'DELETE', url: `/api/v1/customers/${id}`, headers: auth });
+    expect(delAgain.statusCode).toBe(404);
+  });
 });

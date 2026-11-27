@@ -282,6 +282,10 @@ export const api = {
       enqueue_kjgx_writeback?: boolean;
     },
   ) => req<Customer>(`api/v1/customers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteCustomer: (id: string) =>
+    req<{ deleted: true; id: string }>(`api/v1/customers/${id}`, {
+      method: 'DELETE',
+    }),
   logInteraction: (
     id: string,
     body: {

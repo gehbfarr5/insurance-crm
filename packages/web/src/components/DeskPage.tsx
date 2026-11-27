@@ -186,6 +186,35 @@ export function DeskPage({
     dialedRef.current = { customer: c, at: Date.now() };
   };
 
+  const deleteCustomer = useCallback(
+    (c: DeskCustomer) => {
+      const prevItems = items;
+      const prevTotal = total;
+      setDrawerOpen(false);
+      setItems((curr) => curr.filter((x) => x.id !== c.id));
+      setTotal((t) => Math.max(0, t - 1));
+      pushToast({
+        text: `已删除客户「${c.name}」`,
+        durationMs: 5000,
+        onUndo: () => {
+          setItems(prevItems);
+          setTotal(prevTotal);
+        },
+        onExpire: () => {
+          void api
+            .deleteCustomer(c.id)
+            .then(() => setReloadKey((k) => k + 1))
+            .catch((err: unknown) => {
+              setItems(prevItems);
+              setTotal(prevTotal);
+              onToast(err instanceof Error ? err.message : '删除客户失败');
+            });
+        },
+      });
+    },
+    [items, total, onToast],
+  );
+
   const openDrawer = (c: DeskCustomer) => {
     setSelected(c);
     setDrawerOpen(true);
@@ -216,7 +245,7 @@ export function DeskPage({
           <DeskCardList items={items} loading={loading} onOpen={openDrawer} onQuick={quickLog} onDial={handleDial} />
         </>
       )}
-      <footer className="mt-auto flex items-center justify-between border-t border-[var(--card-border)] bg-[var(--card)] px-4 pb-[calc(0.625rem+env(safe-area-inset-bottom))] pt-2.5 text-[12.5px] text-[color:var(--muted-foreground)] md:px-6 md:py-2.5">
+      <footer className="mt-auto flex items-center justify-between border-t border-[var(--card-border)] bg-[var(--card)] px-4 pb-[calc(0.625rem+env(safe-area-inset-bottom))] pt-2.5 text-[13px] text-[color:var(--muted-foreground)] md:px-6 md:py-2.5">
         <span className="tnum">
           共 {total} 位{total > 0 && ` · 第 ${from}–${to} 位`}
         </span>
@@ -248,6 +277,7 @@ export function DeskPage({
         onClose={() => setDrawerOpen(false)}
         onQuick={quickLog}
         onDial={handleDial}
+        onDeleteCustomer={deleteCustomer}
         sync={syncStatus}
         onToast={onToast}
         onChanged={() => setReloadKey((k) => k + 1)}

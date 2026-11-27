@@ -123,6 +123,7 @@ export interface CrmStore {
     actor: ActorContext,
   ): Promise<{ created: true; customer: Customer } | { created: false; duplicates: Customer[] }>;
   updateCustomer(customerId: string, input: UpdateCustomerInput, actor: ActorContext): Promise<Customer>;
+  deleteCustomer(customerId: string, actor: ActorContext): Promise<{ deleted: true; id: string }>;
   logInteraction(
     customerId: string,
     input: CreateInteractionInput,
@@ -544,6 +545,25 @@ export class InMemoryDemoStore implements CrmStore {
     });
 
     return updated;
+  }
+
+  async deleteCustomer(customerId: string, actor: ActorContext): Promise<{ deleted: true; id: string }> {
+    const existing = this.customers.find((c) => c.id === customerId && !c.deleted_at);
+    if (!existing) throw new NotFoundError(`Customer ${customerId} not found`);
+    const now = nowIso();
+    existing.deleted_at = now;
+    existing.updated_at = now;
+    await this.appendAudit({
+      actor_type: actor.actorType,
+      actor_id: actor.actorId,
+      entity_type: 'customer',
+      entity_id: existing.id,
+      action: `删除客户 ${existing.name}`,
+      before_state: { name: existing.name, primary_phone: existing.primary_phone },
+      after_state: { deleted_at: now },
+      metadata: {},
+    });
+    return { deleted: true, id: customerId };
   }
 
   async logInteraction(customerId: string, input: CreateInteractionInput, actor: ActorContext) {
@@ -1680,6 +1700,27 @@ export class PostgresStore implements CrmStore {
       metadata: {},
     });
     return updated;
+  }
+
+  async deleteCustomer(customerId: string, actor: ActorContext): Promise<{ deleted: true; id: string }> {
+    const now = new Date();
+    const [removed] = await this.db
+      .update(customers)
+      .set({ deleted_at: now, updated_at: now })
+      .where(and(eq(customers.id, customerId), isNull(customers.deleted_at)))
+      .returning();
+    if (!removed) throw new NotFoundError(`Customer ${customerId} not found`);
+    await this.appendAudit({
+      actor_type: actor.actorType,
+      actor_id: actor.actorId,
+      entity_type: 'customer',
+      entity_id: removed.id,
+      action: `删除客户 ${removed.name}`,
+      before_state: { name: removed.name, primary_phone: removed.primary_phone },
+      after_state: { deleted_at: now.toISOString() },
+      metadata: {},
+    });
+    return { deleted: true, id: customerId };
   }
 
   async logInteraction(customerId: string, input: CreateInteractionInput, actor: ActorContext) {

@@ -37,6 +37,7 @@ export function CustomerDrawer({
   onClose,
   onQuick,
   onDial,
+  onDeleteCustomer,
   sync,
   onToast,
   onChanged,
@@ -47,6 +48,7 @@ export function CustomerDrawer({
   onClose: () => void;
   onQuick: (c: DeskCustomer, o: QuickOutcome) => void;
   onDial: (c: DeskCustomer) => void;
+  onDeleteCustomer?: (c: DeskCustomer) => void;
   sync: SyncStatusResponse | null;
   onToast: (msg: string) => void;
   onChanged: () => void;
@@ -209,6 +211,16 @@ export function CustomerDrawer({
                   <Pencil className="size-3.5" />
                   编辑资料
                 </button>
+                {onDeleteCustomer && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteCustomer(customer)}
+                    className={`${btn} hover:border-[var(--error)] hover:text-[color:var(--error)]`}
+                  >
+                    <Trash2 className="size-3.5" />
+                    删除客户
+                  </button>
+                )}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <CallSummary c={customer} />
