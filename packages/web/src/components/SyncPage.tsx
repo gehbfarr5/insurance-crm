@@ -301,14 +301,12 @@ function ContactsSection({ sync, onToast }: { sync: SyncStatusResponse | null; o
             type="button"
             className={btn}
             disabled={Boolean(writing)}
-            onClick={() => {
-              if (window.confirm(`将当前 ${items.length} 位客户的完整档案写入 iPhone 通讯录？（保留原有手写备注）`)) {
-                void write(
-                  items.map((i) => i.customer_id),
-                  'batch',
-                );
-              }
-            }}
+            onClick={() =>
+              void write(
+                items.map((i) => i.customer_id),
+                'batch',
+              )
+            }
           >
             写入当前页 {items.length} 位
           </button>

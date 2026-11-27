@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { type Customer360Response, type SyncStatusResponse, api } from '../api.js';
 import { useDialogControl } from '../lib/dialog.js';
 import { buildInfoCard, CHANNEL_LABEL, copyText, fmtDateTime, fmtMoney, OUTCOME_LABEL } from '../lib/format.js';
+import { pushToast } from '../lib/toast-bus.js';
 import { btn, btnPrimary, inputCls, selectCls } from '../lib/ui.js';
 import { CallSummary, QuickActions, type QuickOutcome } from './DeskTable.js';
 import { EditCustomerDialog } from './EditCustomerDialog.js';
@@ -60,8 +61,7 @@ export function CustomerDrawer({
   const [noteKind, setNoteKind] = useState('note');
   const [noteText, setNoteText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(() => new Set());
 
   const customerId = customer?.id;
 
@@ -70,14 +70,8 @@ export function CustomerDrawer({
     setNoteText('');
     setNoteKind('note');
     setCopied(false);
-    setConfirmDeleteId(null);
+    setPendingDeleteIds(new Set());
   }, [customerId]);
-
-  useEffect(() => {
-    if (!confirmDeleteId) return;
-    const t = window.setTimeout(() => setConfirmDeleteId(null), 3000);
-    return () => window.clearTimeout(t);
-  }, [confirmDeleteId]);
 
   useEffect(() => {
     if (!open || !customerId) return;
@@ -135,23 +129,35 @@ export function CustomerDrawer({
     }
   };
 
-  const handleDeleteInteraction = async (interactionId: string) => {
-    if (confirmDeleteId !== interactionId) {
-      setConfirmDeleteId(interactionId);
-      return;
-    }
-    setDeletingId(interactionId);
-    try {
-      await api.deleteInteraction(interactionId);
-      setConfirmDeleteId(null);
-      setTick((t) => t + 1);
-      onChanged();
-      onToast('已删除沟通记录');
-    } catch (err) {
-      onToast(err instanceof Error ? err.message : String(err));
-    } finally {
-      setDeletingId(null);
-    }
+  const handleDeleteInteraction = (it: Interaction) => {
+    setPendingDeleteIds((prev) => new Set(prev).add(it.id));
+    pushToast({
+      text: `已删除「${OUTCOME_LABEL[it.outcome] ?? it.outcome}」记录`,
+      durationMs: 5000,
+      onUndo: () => {
+        setPendingDeleteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(it.id);
+          return next;
+        });
+      },
+      onExpire: () => {
+        void api
+          .deleteInteraction(it.id)
+          .then(() => {
+            setTick((t) => t + 1);
+            onChanged();
+          })
+          .catch((err) => {
+            setPendingDeleteIds((prev) => {
+              const next = new Set(prev);
+              next.delete(it.id);
+              return next;
+            });
+            onToast(err instanceof Error ? err.message : '删除失败');
+          });
+      },
+    });
   };
 
   const c = detail?.customer;
@@ -309,39 +315,34 @@ export function CustomerDrawer({
                   </button>
                 </form>
                 <ol className="space-y-2">
-                  {detail?.interactions.map((it) => {
-                    const confirming = confirmDeleteId === it.id;
-                    const deleting = deletingId === it.id;
-                    return (
-                      <li key={it.id} className="group rounded-lg border border-[var(--card-border)] px-3 py-2">
-                        <div className="flex items-center justify-between gap-2 text-[12px] text-[color:var(--muted-foreground)]">
-                          <span>
+                  {detail?.interactions
+                    .filter((it) => !pendingDeleteIds.has(it.id))
+                    .map((it) => (
+                      <li key={it.id} className="rounded-lg border border-[var(--card-border)] px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-[12px] text-[color:var(--muted-foreground)]">
                             {CHANNEL_LABEL[it.channel] ?? it.channel} · {OUTCOME_LABEL[it.outcome] ?? it.outcome} ·{' '}
                             {it.recorded_by_actor}
                           </span>
-                          <div className="flex items-center gap-2">
-                            <span className="tnum">{fmtDateTime(it.occurred_at)}</span>
-                            <button
-                              type="button"
-                              disabled={deleting}
-                              onClick={() => void handleDeleteInteraction(it.id)}
-                              aria-label={confirming ? '确认删除此记录' : '删除此记录'}
-                              className={`inline-flex h-6 cursor-pointer items-center gap-1 rounded px-1.5 text-[11.5px] transition-colors ${
-                                confirming
-                                  ? 'bg-[var(--error)] font-medium text-white'
-                                  : 'text-[color:var(--muted-foreground)] opacity-75 hover:bg-[var(--secondary)] hover:text-[color:var(--error)] hover:opacity-100'
-                              }`}
-                            >
-                              <Trash2 className="size-3" />
-                              {confirming ? (deleting ? '删除中…' : '确认删除') : '删除'}
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteInteraction(it)}
+                            aria-label="删除此记录"
+                            className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 text-[11.5px] text-[color:var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[color:var(--error)]"
+                          >
+                            <Trash2 className="size-3" />
+                            删除
+                          </button>
                         </div>
-                        <p className="mt-0.5 whitespace-pre-wrap break-words">{it.summary}</p>
+                        <p className="mt-1 whitespace-pre-wrap break-words">{it.summary}</p>
+                        <div className="mt-1.5 flex justify-end">
+                          <span className="tnum text-[11.5px] text-[color:var(--muted-foreground)]">
+                            {fmtDateTime(it.occurred_at)}
+                          </span>
+                        </div>
                       </li>
-                    );
-                  })}
-                  {detail && detail.interactions.length === 0 && (
+                    ))}
+                  {detail && detail.interactions.filter((it) => !pendingDeleteIds.has(it.id)).length === 0 && (
                     <li className="text-[color:var(--muted-foreground)]">暂无沟通记录</li>
                   )}
                 </ol>

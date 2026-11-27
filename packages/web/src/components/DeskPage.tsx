@@ -4,28 +4,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiUnauthorizedError, type SyncStatusResponse, api } from '../api.js';
 import { buildInfoCard, copyText } from '../lib/format.js';
 import { DEFAULT_FILTERS, type DeskFilters, loadFilters, saveFilters, toDeskParams } from '../lib/desk-filters.js';
+import { pushToast } from '../lib/toast-bus.js';
 import { btn } from '../lib/ui.js';
-import { CallToasts, PENDING_MS, type PendingView } from './CallToasts.js';
 import { CustomerDrawer } from './CustomerDrawer.js';
 import { DeskCardList } from './DeskCardList.js';
 import { DeskTable, type QuickOutcome } from './DeskTable.js';
 import { FilterBar } from './FilterBar.js';
 
 const PAGE_SIZE = 50;
+const REJECT_REASONS = ['没空', '在外地', '暂不考虑', '不需要'] as const;
+const OUTCOME_TEXT: Record<QuickOutcome, string> = {
+  no_answer: '未接',
+  rejected: '拒绝',
+  invited: '已邀约',
+};
 
 type StatSnapshot = Pick<
   CallStats,
   'call_count' | 'last_call_at' | 'last_call_outcome' | 'last_call_summary' | 'ever_rejected' | 'ever_invited'
 >;
-
-interface Pending {
-  customer: DeskCustomer;
-  outcome: QuickOutcome;
-  snapshot: StatSnapshot;
-  timer: number | null;
-  paused: boolean;
-  reason?: string;
-}
 
 function summaryFor(o: QuickOutcome, reason?: string): string {
   if (o === 'no_answer') return '未接';
@@ -63,11 +60,8 @@ export function DeskPage({
   const [drawerTick, setDrawerTick] = useState(0);
   const [selected, setSelected] = useState<DeskCustomer | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [pendingView, setPendingView] = useState<PendingView[]>([]);
-  const [dialPrompt, setDialPrompt] = useState<DeskCustomer | null>(null);
   const dialedRef = useRef<{ customer: DeskCustomer; at: number } | null>(null);
   const reqRef = useRef(0);
-  const pendingRef = useRef(new Map<string, Pending>());
 
   useEffect(() => {
     saveFilters(filters);
@@ -97,7 +91,76 @@ export function DeskPage({
     return () => window.clearTimeout(t);
   }, [filters, offset, reloadKey, onUnauthorized]);
 
-  // Post-call return loop: after tapping tel: and switching back from phone dialer, offer 1-tap logging
+  const patchFilters = useCallback((patch: Partial<DeskFilters>) => {
+    setFilters((f) => ({ ...f, ...patch }));
+    setOffset(0);
+  }, []);
+
+  const revert = useCallback((id: string, snap: StatSnapshot) => {
+    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...snap } : x)));
+  }, []);
+
+  const commitCall = useCallback(
+    async (c: DeskCustomer, outcome: QuickOutcome, snap: StatSnapshot, reason?: string) => {
+      try {
+        await api.logCall(c.id, outcome, summaryFor(outcome, reason));
+        setDrawerTick((t) => t + 1);
+      } catch (err) {
+        revert(c.id, snap);
+        onToast(`记录失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [revert, onToast],
+  );
+
+  const copyInfoCard = useCallback(
+    async (c: DeskCustomer) => {
+      try {
+        const detail = await api.getCustomer360(c.id);
+        const ok = await copyText(buildInfoCard(detail, c.age));
+        if (!ok) onToast('复制失败，请在详情中手动复制');
+      } catch (err) {
+        onToast(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [onToast],
+  );
+
+  const quickLog = useCallback(
+    (c: DeskCustomer, outcome: QuickOutcome) => {
+      const current = items.find((x) => x.id === c.id) ?? c;
+      const snapshot = pickStats(current);
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === c.id
+            ? {
+                ...x,
+                call_count: x.call_count + 1,
+                last_call_at: new Date().toISOString(),
+                last_call_outcome: outcome,
+                last_call_summary: summaryFor(outcome),
+                ever_rejected: x.ever_rejected || outcome === 'rejected',
+                ever_invited: x.ever_invited || outcome === 'invited',
+              }
+            : x,
+        ),
+      );
+      if (outcome === 'invited') void copyInfoCard(c);
+
+      pushToast({
+        text: `${c.name} · ${OUTCOME_TEXT[outcome]}`,
+        note: outcome === 'invited' ? '信息卡已复制，可发给 MUSE' : undefined,
+        durationMs: 5000,
+        reasonChips: outcome === 'rejected' ? REJECT_REASONS : undefined,
+        onReason: (reason) => void commitCall(c, outcome, snapshot, reason),
+        onUndo: () => revert(c.id, snapshot),
+        onExpire: () => void commitCall(c, outcome, snapshot),
+      });
+    },
+    [items, copyInfoCard, commitCall, revert],
+  );
+
+  // Post-call return loop: after tapping tel: and returning to the browser, offer 1-tap logging
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState !== 'visible') return;
@@ -106,133 +169,22 @@ export function DeskPage({
       const elapsed = Date.now() - d.at;
       dialedRef.current = null;
       if (elapsed >= 800 && elapsed <= 30 * 60_000) {
-        setDialPrompt(d.customer);
+        pushToast({
+          id: `dial-${d.customer.id}`,
+          text: '',
+          durationMs: 0,
+          dialCustomer: d.customer,
+          onDialResult: (cust, o) => quickLog(cust, o),
+        });
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, []);
-
-  const patchFilters = useCallback((patch: Partial<DeskFilters>) => {
-    setFilters((f) => ({ ...f, ...patch }));
-    setOffset(0);
-  }, []);
-
-  const syncView = () => {
-    setPendingView(
-      Array.from(pendingRef.current.entries()).map(([key, p]) => ({
-        key,
-        name: p.customer.name,
-        outcome: p.outcome,
-        paused: p.paused,
-        note: p.outcome === 'invited' ? '信息卡已复制，可直接发给 MUSE' : undefined,
-      })),
-    );
-  };
-
-  const revert = (id: string, snap: StatSnapshot) => {
-    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...snap } : x)));
-  };
-
-  const commit = useCallback(
-    async (key: string) => {
-      const p = pendingRef.current.get(key);
-      if (!p) return;
-      if (p.timer !== null) window.clearTimeout(p.timer);
-      pendingRef.current.delete(key);
-      syncView();
-      try {
-        await api.logCall(p.customer.id, p.outcome, summaryFor(p.outcome, p.reason));
-        setDrawerTick((t) => t + 1);
-      } catch (err) {
-        revert(p.customer.id, p.snapshot);
-        onToast(`记录失败：${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-    [onToast],
-  );
-
-  const undo = (key: string) => {
-    const p = pendingRef.current.get(key);
-    if (!p) return;
-    if (p.timer !== null) window.clearTimeout(p.timer);
-    pendingRef.current.delete(key);
-    revert(p.customer.id, p.snapshot);
-    syncView();
-  };
-
-  const setReason = (key: string, reason: string) => {
-    const p = pendingRef.current.get(key);
-    if (!p) return;
-    p.reason = reason;
-    void commit(key);
-  };
-
-  const handleHover = (key: string, hovered: boolean) => {
-    const p = pendingRef.current.get(key);
-    if (!p) return;
-    if (hovered) {
-      if (p.timer !== null) window.clearTimeout(p.timer);
-      p.timer = null;
-      p.paused = true;
-    } else {
-      p.paused = false;
-      p.timer = window.setTimeout(() => void commit(key), PENDING_MS);
-    }
-    syncView();
-  };
-
-  const copyInfoCard = async (c: DeskCustomer) => {
-    try {
-      const detail = await api.getCustomer360(c.id);
-      const ok = await copyText(buildInfoCard(detail, c.age));
-      onToast(ok ? `已复制「${c.name}」完整信息卡，可直接发给 MUSE` : '复制失败，请在详情中手动复制');
-    } catch (err) {
-      onToast(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const quickLog = (c: DeskCustomer, outcome: QuickOutcome) => {
-    const current = items.find((x) => x.id === c.id) ?? c;
-    const key = `${c.id}-${Date.now()}`;
-    const snapshot = pickStats(current);
-    setItems((prev) =>
-      prev.map((x) =>
-        x.id === c.id
-          ? {
-              ...x,
-              call_count: x.call_count + 1,
-              last_call_at: new Date().toISOString(),
-              last_call_outcome: outcome,
-              last_call_summary: summaryFor(outcome),
-              ever_rejected: x.ever_rejected || outcome === 'rejected',
-              ever_invited: x.ever_invited || outcome === 'invited',
-            }
-          : x,
-      ),
-    );
-    const timer = window.setTimeout(() => void commit(key), PENDING_MS);
-    pendingRef.current.set(key, { customer: c, outcome, snapshot, timer, paused: false });
-    syncView();
-    if (outcome === 'invited') void copyInfoCard(c);
-  };
+  }, [quickLog]);
 
   const handleDial = (c: DeskCustomer) => {
     dialedRef.current = { customer: c, at: Date.now() };
   };
-
-  // Flush un-committed quick logs if the tab is closed during the undo window.
-  useEffect(() => {
-    const flush = () => {
-      for (const p of pendingRef.current.values()) {
-        if (p.timer !== null) window.clearTimeout(p.timer);
-        void api.logCall(p.customer.id, p.outcome, summaryFor(p.outcome, p.reason), true).catch(() => undefined);
-      }
-      pendingRef.current.clear();
-    };
-    window.addEventListener('pagehide', flush);
-    return () => window.removeEventListener('pagehide', flush);
-  }, []);
 
   const openDrawer = (c: DeskCustomer) => {
     setSelected(c);
@@ -260,20 +212,8 @@ export function DeskPage({
         <div className="grid flex-1 place-items-center py-20 text-[color:var(--muted-foreground)]">加载中…</div>
       ) : (
         <>
-          <DeskTable
-            items={items}
-            loading={loading}
-            onOpen={openDrawer}
-            onQuick={quickLog}
-            onDial={handleDial}
-          />
-          <DeskCardList
-            items={items}
-            loading={loading}
-            onOpen={openDrawer}
-            onQuick={quickLog}
-            onDial={handleDial}
-          />
+          <DeskTable items={items} loading={loading} onOpen={openDrawer} onQuick={quickLog} onDial={handleDial} />
+          <DeskCardList items={items} loading={loading} onOpen={openDrawer} onQuick={quickLog} onDial={handleDial} />
         </>
       )}
       <footer className="mt-auto flex items-center justify-between border-t border-[var(--card-border)] bg-[var(--card)] px-4 pb-[calc(0.625rem+env(safe-area-inset-bottom))] pt-2.5 text-[12.5px] text-[color:var(--muted-foreground)] md:px-6 md:py-2.5">
@@ -312,18 +252,6 @@ export function DeskPage({
         onToast={onToast}
         onChanged={() => setReloadKey((k) => k + 1)}
         refreshSignal={drawerTick}
-      />
-      <CallToasts
-        pending={pendingView}
-        dialPrompt={dialPrompt}
-        onDialResult={(c, o) => {
-          setDialPrompt(null);
-          quickLog(c, o);
-        }}
-        onDismissDialPrompt={() => setDialPrompt(null)}
-        onUndo={undo}
-        onReason={setReason}
-        onHover={handleHover}
       />
     </div>
   );

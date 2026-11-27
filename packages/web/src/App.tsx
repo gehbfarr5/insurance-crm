@@ -1,6 +1,6 @@
-import { AnimatePresence, MotionConfig, motion } from 'motion/react';
+import { MotionConfig, motion } from 'motion/react';
 import { LogOut, Moon, Sun } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ApiUnauthorizedError,
   type DashboardResponse,
@@ -10,12 +10,13 @@ import {
   getBearerToken,
   setBearerToken,
 } from './api.js';
+import { BottomToastHost } from './components/BottomToastHost.js';
 import { DeskPage } from './components/DeskPage.js';
 import { KjgxCapsule, KjgxPanel } from './components/KjgxPanel.js';
 import { SyncPage } from './components/SyncPage.js';
 import { useKjgxConnection } from './lib/kjgx.js';
 import { useScheme } from './lib/theme.js';
-import { useTopLayerPopover } from './lib/top-layer.js';
+import { pushToast } from './lib/toast-bus.js';
 import { btnPrimary, inputCls } from './lib/ui.js';
 
 type Page = 'desk' | 'sync';
@@ -25,23 +26,16 @@ export function App() {
   const [auth, setAuth] = useState<'checking' | 'ok' | 'required'>('checking');
   const [page, setPage] = useState<Page>('desk');
   const [syncMounted, setSyncMounted] = useState(false);
-  const [toastMsg, setToastMsg] = useState<{ id: number; text: string } | null>(null);
   const [stats, setStats] = useState<DashboardResponse['stats'] | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
   const [kjgxOpen, setKjgxOpen] = useState(false);
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
-  const toastRef = useRef<HTMLDivElement>(null);
 
-  const toast = useCallback((text: string) => setToastMsg({ id: Date.now(), text }), []);
+  const toast = useCallback((text: string) => {
+    pushToast({ text, durationMs: 3200 });
+  }, []);
   const onUnauthorized = useCallback(() => setAuth('required'), []);
-  useTopLayerPopover(toastRef, Boolean(toastMsg), toastMsg?.id);
-
-  useEffect(() => {
-    if (!toastMsg) return;
-    const t = window.setTimeout(() => setToastMsg(null), 3200);
-    return () => window.clearTimeout(t);
-  }, [toastMsg]);
 
   const refreshMeta = useCallback(async () => {
     try {
@@ -136,7 +130,9 @@ export function App() {
                 aria-current={page === n.id ? 'page' : undefined}
                 onClick={() => goto(n.id)}
                 className={`relative flex h-full shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap px-2 text-[12.5px] transition-colors md:px-3 md:text-[13px] ${
-                  page === n.id ? 'font-medium text-[color:var(--foreground)]' : 'text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]'
+                  page === n.id
+                    ? 'font-medium text-[color:var(--foreground)]'
+                    : 'text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]'
                 }`}
               >
                 {n.label}
@@ -203,27 +199,7 @@ export function App() {
         onToast={toast}
       />
 
-      <div
-        ref={toastRef}
-        popover="manual"
-        className="top-toast-layer pointer-events-none fixed inset-x-0 top-14 flex justify-center"
-        aria-live="polite"
-      >
-        <AnimatePresence>
-          {toastMsg && (
-            <motion.div
-              key={toastMsg.id}
-              initial={{ opacity: 0, y: -10, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={{ type: 'spring', stiffness: 460, damping: 34 }}
-              className="pointer-events-auto max-w-[min(34rem,92vw)] rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-[color:var(--foreground)] shadow-[0_12px_32px_-8px_rgb(0_0_0/0.22)]"
-            >
-              {toastMsg.text}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      <BottomToastHost />
     </MotionConfig>
   );
 }
