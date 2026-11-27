@@ -1,5 +1,6 @@
-import type { Interaction } from '@insurance-crm/shared';
+import type { Customer, Interaction } from '@insurance-crm/shared';
 import type { Customer360Response } from '../api.js';
+import type { BadgeTone } from './ui.js';
 
 export const OUTCOME_LABEL: Record<string, string> = {
   connected: '已接通',
@@ -10,6 +11,15 @@ export const OUTCOME_LABEL: Record<string, string> = {
   followed_up: '已跟进',
 };
 
+export const OUTCOME_TONE: Record<string, BadgeTone> = {
+  connected: 'info',
+  no_answer: 'neutral',
+  rejected: 'error',
+  invited: 'success',
+  attended: 'success',
+  followed_up: 'info',
+};
+
 export const CHANNEL_LABEL: Record<string, string> = {
   phone: '电话',
   platform_event: '平台会',
@@ -17,6 +27,28 @@ export const CHANNEL_LABEL: Record<string, string> = {
   in_person_visit: '上门',
   policy_review: '保单检视',
   other: '备注',
+};
+
+export const RAPPORT_LABEL: Record<Customer['rapport_tag'], string> = {
+  friendly: '友好',
+  neutral: '中性',
+  cautious: '谨慎',
+  paused: '暂缓',
+  unassessed: '未评估',
+};
+
+export const RAPPORT_TONE: Record<Customer['rapport_tag'], BadgeTone> = {
+  friendly: 'success',
+  neutral: 'info',
+  cautious: 'warning',
+  paused: 'error',
+  unassessed: 'neutral',
+};
+
+export const PRIORITY_LABEL: Record<NonNullable<Customer['visit_priority']>, string> = {
+  high: '重点',
+  medium: '常规',
+  low: '低优',
 };
 
 export function fmtMoney(v: number | null | undefined): string {
@@ -30,6 +62,30 @@ export function fmtDateTime(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return iso.slice(0, 16).replace('T', ' ');
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+export function fmtShortDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  const p = (n: number) => String(n).padStart(2, '0');
+  const now = new Date();
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+export function followupUrgency(iso: string | null | undefined): 'overdue' | 'today' | 'upcoming' | null {
+  if (!iso) return null;
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return null;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfTomorrow = startOfToday + 86_400_000;
+  if (ts < startOfToday) return 'overdue';
+  if (ts < startOfTomorrow) return 'today';
+  return 'upcoming';
 }
 
 export function relTime(iso: string | null | undefined): string {

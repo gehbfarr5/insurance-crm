@@ -1,10 +1,10 @@
-import type { CallFilter, DeskSortField } from '@insurance-crm/shared';
-import { ArrowDown, ArrowUp, RotateCcw, Search, SlidersHorizontal, X } from 'lucide-react';
+import type { CallFilter, DeskSortField, FollowupView } from '@insurance-crm/shared';
+import { ArrowDown, ArrowUp, ChevronDown, RotateCcw, Search, SlidersHorizontal, X } from 'lucide-react';
 import { type ReactNode, useId, useState } from 'react';
 import { ADDRESS_PRESETS, AGE_PRESETS, type DeskFilters, PREMIUM_PRESETS } from '../lib/desk-filters.js';
 import { useDialogControl } from '../lib/dialog.js';
 import { btn, btnPrimary, chipCls, inputCls, selectCls } from '../lib/ui.js';
-import { Segmented } from './Motion.js';
+import { Collapsible, Segmented } from './Motion.js';
 
 const GENDER_OPTIONS = [
   { value: '', label: '全部' },
@@ -38,7 +38,7 @@ const CALL_LABELS: Record<CallFilter, string> = {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-[3.2em] shrink-0 text-[12px] text-[color:var(--muted-foreground)]">{label}</span>
+      <span className="w-[3.2em] shrink-0 text-[13px] text-[color:var(--muted-foreground)]">{label}</span>
       <div className="flex flex-wrap items-center gap-1.5">{children}</div>
     </div>
   );
@@ -47,17 +47,27 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 export function FilterBar({
   filters,
   total,
+  viewCounts,
   onChange,
   onReset,
 }: {
   filters: DeskFilters;
   total: number;
+  viewCounts?: Record<FollowupView, number>;
   onChange: (patch: Partial<DeskFilters>) => void;
   onReset: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const { ref, close } = useDialogControl(sheetOpen, () => setSheetOpen(false));
   const sheetTitleId = useId();
+
+  const viewOptions: ReadonlyArray<{ value: FollowupView; label: string; count?: number }> = [
+    { value: 'all', label: '全部', count: viewCounts?.all },
+    { value: 'today', label: '今日待跟进', count: viewCounts?.today },
+    { value: 'overdue', label: '已逾期', count: viewCounts?.overdue },
+    { value: 'priority', label: '重点跟进', count: viewCounts?.priority },
+  ];
 
   const activeChips: Array<{ key: string; label: string; clear: () => void }> = [];
   if (filters.gender) activeChips.push({ key: 'gender', label: filters.gender, clear: () => onChange({ gender: '' }) });
@@ -88,142 +98,35 @@ export function FilterBar({
 
   return (
     <>
-      {/* Desktop inline filter bar */}
-      <div className="hidden space-y-2.5 border-b border-[var(--card-border)] bg-[var(--card)] px-6 py-3.5 md:block">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5">
-          <label className="relative block">
-            <span className="sr-only">搜索姓名、手机或地址</span>
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[color:var(--muted-foreground)]"
-            />
-            <input
-              type="search"
-              value={filters.query}
-              onChange={(e) => onChange({ query: e.target.value })}
-              placeholder="姓名 / 手机 / 地址"
-              className={`${inputCls} w-64 pl-8`}
-            />
-          </label>
-          <Field label="性别">
-            <Segmented
-              label="性别"
-              value={filters.gender}
-              options={GENDER_OPTIONS}
-              onChange={(v) => onChange({ gender: v })}
-            />
-          </Field>
-          <Field label="年龄">
-            <input
-              aria-label="最小年龄"
-              inputMode="numeric"
-              value={filters.minAge}
-              onChange={(e) => onChange({ minAge: e.target.value.replace(/\D/g, '') })}
-              placeholder="最小"
-              className={`${inputCls} tnum w-14 text-center`}
-            />
-            <span className="text-[color:var(--muted-foreground)]">–</span>
-            <input
-              aria-label="最大年龄"
-              inputMode="numeric"
-              value={filters.maxAge}
-              onChange={(e) => onChange({ maxAge: e.target.value.replace(/\D/g, '') })}
-              placeholder="最大"
-              className={`${inputCls} tnum w-14 text-center`}
-            />
-            <select
-              aria-label="年龄预设"
-              value={AGE_PRESETS.find((p) => p.min === filters.minAge && p.max === filters.maxAge)?.label ?? ''}
-              onChange={(e) => {
-                const found = AGE_PRESETS.find((p) => p.label === e.target.value);
-                onChange(found ? { minAge: found.min, maxAge: found.max } : { minAge: '', maxAge: '' });
-              }}
-              className={`${selectCls} pr-6`}
-            >
-              <option value="">快捷年龄</option>
-              {AGE_PRESETS.map((p) => (
-                <option key={p.label} value={p.label}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+      {/* Desktop compact view-bar + collapsible filter drawer */}
+      <div className="hidden border-b border-[var(--card-border)] bg-[var(--card)] md:block">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5">
+          <Segmented
+            label="跟进视图"
+            value={filters.view}
+            options={viewOptions}
+            onChange={(v) => onChange({ view: v })}
+          />
 
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5">
-          <Field label="总保费">
-            <input
-              aria-label="最低保费（万）"
-              inputMode="decimal"
-              value={filters.minWan}
-              onChange={(e) => onChange({ minWan: e.target.value.replace(/[^\d.]/g, '') })}
-              placeholder="最低"
-              className={`${inputCls} tnum w-16 text-center`}
-            />
-            <span className="text-[color:var(--muted-foreground)]">–</span>
-            <input
-              aria-label="最高保费（万）"
-              inputMode="decimal"
-              value={filters.maxWan}
-              onChange={(e) => onChange({ maxWan: e.target.value.replace(/[^\d.]/g, '') })}
-              placeholder="最高"
-              className={`${inputCls} tnum w-16 text-center`}
-            />
-            <span className="text-[13px] text-[color:var(--muted-foreground)]">万</span>
-            <select
-              aria-label="保费预设"
-              value={PREMIUM_PRESETS.find((p) => p.min === filters.minWan && p.max === filters.maxWan)?.label ?? ''}
-              onChange={(e) => {
-                const found = PREMIUM_PRESETS.find((p) => p.label === e.target.value);
-                onChange(found ? { minWan: found.min, maxWan: found.max } : { minWan: '', maxWan: '' });
-              }}
-              className={`${selectCls} pr-6`}
-            >
-              <option value="">快捷保费</option>
-              {PREMIUM_PRESETS.map((p) => (
-                <option key={p.label} value={p.label}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="地址">
-            <input
-              aria-label="居住地址关键词"
-              value={filters.address}
-              onChange={(e) => onChange({ address: e.target.value })}
-              placeholder="关键词"
-              className={`${inputCls} w-32`}
-            />
-            <select
-              aria-label="常用区域"
-              value={ADDRESS_PRESETS.includes(filters.address as (typeof ADDRESS_PRESETS)[number]) ? filters.address : ''}
-              onChange={(e) => onChange({ address: e.target.value })}
-              className={`${selectCls} pr-6`}
-            >
-              <option value="">常用区域</option>
-              {ADDRESS_PRESETS.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative block">
+              <span className="sr-only">搜索姓名、手机或地址</span>
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[color:var(--muted-foreground)]"
+              />
+              <input
+                type="search"
+                value={filters.query}
+                onChange={(e) => onChange({ query: e.target.value })}
+                placeholder="搜索姓名 / 手机 / 地址"
+                className={`${inputCls} w-56 pl-8`}
+              />
+            </label>
 
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2.5">
-          <Field label="外呼">
-            <Segmented
-              label="外呼状态过滤"
-              value={filters.callFilter}
-              options={CALL_OPTIONS}
-              onChange={(v) => onChange({ callFilter: v })}
-            />
-          </Field>
-          <div className="flex items-center gap-1.5">
-            <label className="flex items-center gap-2 text-[13px] text-[color:var(--muted-foreground)]">
-              排序
+            <div className="flex items-center gap-1">
               <select
+                aria-label="排序字段"
                 value={filters.sortBy}
                 onChange={(e) => onChange({ sortBy: e.target.value as DeskSortField })}
                 className={`${selectCls} pr-6`}
@@ -234,25 +137,200 @@ export function FilterBar({
                   </option>
                 ))}
               </select>
-            </label>
+              <button
+                type="button"
+                onClick={() => onChange({ sortDir: filters.sortDir === 'desc' ? 'asc' : 'desc' })}
+                aria-label={filters.sortDir === 'desc' ? '当前降序，点击改为升序' : '当前升序，点击改为降序'}
+                className={`${btn} w-8 px-0`}
+              >
+                {filters.sortDir === 'desc' ? <ArrowDown className="size-3.5" /> : <ArrowUp className="size-3.5" />}
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={() => onChange({ sortDir: filters.sortDir === 'desc' ? 'asc' : 'desc' })}
-              aria-label={filters.sortDir === 'desc' ? '当前降序，点击改为升序' : '当前升序，点击改为降序'}
-              className={`${btn} w-8 px-0`}
+              aria-expanded={expanded}
+              onClick={() => setExpanded((v) => !v)}
+              className={`${btn} ${expanded || activeChips.length > 0 ? 'border-[var(--foreground)]/30 bg-[var(--surface-subtle)]' : ''}`}
             >
-              {filters.sortDir === 'desc' ? <ArrowDown className="size-3.5" /> : <ArrowUp className="size-3.5" />}
+              <SlidersHorizontal className="size-3.5" />
+              <span>筛选</span>
+              {activeChips.length > 0 && (
+                <span className="tnum inline-flex h-4 min-w-4 items-center justify-center rounded bg-[var(--primary)] px-1 text-[13px] leading-none font-medium text-[color:var(--primary-foreground)]">
+                  {activeChips.length}
+                </span>
+              )}
+              <ChevronDown
+                className={`size-3.5 text-[color:var(--muted-foreground)] transition-transform duration-180 ease-[cubic-bezier(0.2,0,0,1)] ${
+                  expanded ? 'rotate-180' : ''
+                }`}
+              />
             </button>
-            <button type="button" onClick={onReset} className={btn}>
-              <RotateCcw className="size-3.5" />
-              重置
-            </button>
+
+            {(activeChips.length > 0 || filters.query || filters.view !== 'all') && (
+              <button type="button" onClick={onReset} className={btn}>
+                <RotateCcw className="size-3.5" />
+                重置
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Active filter summary chips when advanced drawer is collapsed */}
+        {!expanded && activeChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--card-border)] bg-[var(--surface-subtle)] px-6 py-1.5">
+            <span className="text-[13px] text-[color:var(--muted-foreground)]">已选：</span>
+            {activeChips.map((ch) => (
+              <button
+                key={ch.key}
+                type="button"
+                onClick={ch.clear}
+                className="inline-flex h-6 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 text-[13px] text-[color:var(--foreground)] transition-colors duration-120 hover:bg-[var(--hover)]"
+              >
+                <span>{ch.label}</span>
+                <X className="size-3 text-[color:var(--muted-foreground)]" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Collapsible advanced filter drawer */}
+        <Collapsible open={expanded}>
+          <div className="space-y-2.5 border-t border-[var(--card-border)] bg-[var(--surface-subtle)] px-6 py-3">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5">
+              <Field label="性别">
+                <Segmented
+                  label="性别"
+                  value={filters.gender}
+                  options={GENDER_OPTIONS}
+                  onChange={(v) => onChange({ gender: v })}
+                />
+              </Field>
+              <Field label="年龄">
+                <input
+                  aria-label="最小年龄"
+                  inputMode="numeric"
+                  value={filters.minAge}
+                  onChange={(e) => onChange({ minAge: e.target.value.replace(/\D/g, '') })}
+                  placeholder="最小"
+                  className={`${inputCls} tnum w-14 text-center`}
+                />
+                <span className="text-[color:var(--muted-foreground)]">–</span>
+                <input
+                  aria-label="最大年龄"
+                  inputMode="numeric"
+                  value={filters.maxAge}
+                  onChange={(e) => onChange({ maxAge: e.target.value.replace(/\D/g, '') })}
+                  placeholder="最大"
+                  className={`${inputCls} tnum w-14 text-center`}
+                />
+                <select
+                  aria-label="年龄预设"
+                  value={AGE_PRESETS.find((p) => p.min === filters.minAge && p.max === filters.maxAge)?.label ?? ''}
+                  onChange={(e) => {
+                    const found = AGE_PRESETS.find((p) => p.label === e.target.value);
+                    onChange(found ? { minAge: found.min, maxAge: found.max } : { minAge: '', maxAge: '' });
+                  }}
+                  className={`${selectCls} pr-6`}
+                >
+                  <option value="">快捷年龄</option>
+                  {AGE_PRESETS.map((p) => (
+                    <option key={p.label} value={p.label}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="总保费">
+                <input
+                  aria-label="最低保费（万）"
+                  inputMode="decimal"
+                  value={filters.minWan}
+                  onChange={(e) => onChange({ minWan: e.target.value.replace(/[^\d.]/g, '') })}
+                  placeholder="最低"
+                  className={`${inputCls} tnum w-16 text-center`}
+                />
+                <span className="text-[color:var(--muted-foreground)]">–</span>
+                <input
+                  aria-label="最高保费（万）"
+                  inputMode="decimal"
+                  value={filters.maxWan}
+                  onChange={(e) => onChange({ maxWan: e.target.value.replace(/[^\d.]/g, '') })}
+                  placeholder="最高"
+                  className={`${inputCls} tnum w-16 text-center`}
+                />
+                <span className="text-[13px] text-[color:var(--muted-foreground)]">万</span>
+                <select
+                  aria-label="保费预设"
+                  value={PREMIUM_PRESETS.find((p) => p.min === filters.minWan && p.max === filters.maxWan)?.label ?? ''}
+                  onChange={(e) => {
+                    const found = PREMIUM_PRESETS.find((p) => p.label === e.target.value);
+                    onChange(found ? { minWan: found.min, maxWan: found.max } : { minWan: '', maxWan: '' });
+                  }}
+                  className={`${selectCls} pr-6`}
+                >
+                  <option value="">快捷保费</option>
+                  {PREMIUM_PRESETS.map((p) => (
+                    <option key={p.label} value={p.label}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5">
+              <Field label="地址">
+                <input
+                  aria-label="居住地址关键词"
+                  value={filters.address}
+                  onChange={(e) => onChange({ address: e.target.value })}
+                  placeholder="关键词"
+                  className={`${inputCls} w-32`}
+                />
+                <select
+                  aria-label="常用区域"
+                  value={ADDRESS_PRESETS.includes(filters.address as (typeof ADDRESS_PRESETS)[number]) ? filters.address : ''}
+                  onChange={(e) => onChange({ address: e.target.value })}
+                  className={`${selectCls} pr-6`}
+                >
+                  <option value="">常用区域</option>
+                  {ADDRESS_PRESETS.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="外呼">
+                <Segmented
+                  label="外呼状态过滤"
+                  value={filters.callFilter}
+                  options={CALL_OPTIONS}
+                  onChange={(v) => onChange({ callFilter: v })}
+                />
+              </Field>
+            </div>
+          </div>
+        </Collapsible>
       </div>
 
-      {/* Mobile compact search + filter bottom-sheet trigger */}
+      {/* Mobile compact view switcher + search + filter bottom-sheet trigger */}
       <div className="space-y-2 border-b border-[var(--card-border)] bg-[var(--card)] px-3.5 py-2.5 md:hidden">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          {viewOptions.map((v) => (
+            <button
+              key={v.value}
+              type="button"
+              onClick={() => onChange({ view: v.value })}
+              className={chipCls(filters.view === v.value)}
+            >
+              <span>{v.label}</span>
+              {v.count !== undefined && <span className="tnum ml-1 opacity-75">{v.count}</span>}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center gap-2">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">搜索姓名、手机或地址</span>
@@ -276,7 +354,7 @@ export function FilterBar({
             <SlidersHorizontal className="size-3.5" />
             <span>筛选</span>
             {activeChips.length > 0 && (
-              <span className="tnum inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[13px] font-medium text-[color:var(--primary-foreground)]">
+              <span className="tnum inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-[var(--primary)] px-1 text-[13px] font-medium text-[color:var(--primary-foreground)]">
                 {activeChips.length}
               </span>
             )}
@@ -290,7 +368,7 @@ export function FilterBar({
                 key={ch.key}
                 type="button"
                 onClick={ch.clear}
-                className="touch-action inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--secondary)] px-3 text-[13px] text-[color:var(--foreground)]"
+                className="touch-action inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--secondary)] px-2.5 text-[13px] text-[color:var(--foreground)]"
               >
                 <span>{ch.label}</span>
                 <X className="size-3.5 text-[color:var(--muted-foreground)]" />
@@ -310,7 +388,7 @@ export function FilterBar({
       {/* Mobile Filter Bottom Sheet */}
       <dialog ref={ref} className="bottom-sheet" aria-labelledby={sheetTitleId}>
         <div className="flex flex-col">
-          <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--card-border)] bg-[var(--card)] px-4 py-3">
+          <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--card-border)] bg-[var(--surface-elevated)] px-4 py-3">
             <h2 id={sheetTitleId} className="text-[16px] font-semibold">
               筛选与排序
             </h2>
@@ -323,7 +401,7 @@ export function FilterBar({
                 type="button"
                 onClick={close}
                 aria-label="关闭筛选"
-                className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-lg text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)]"
+                className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-md text-[color:var(--muted-foreground)] hover:bg-[var(--hover)]"
               >
                 <X className="size-4" />
               </button>
@@ -482,7 +560,7 @@ export function FilterBar({
             </div>
           </div>
 
-          <footer className="sticky bottom-0 border-t border-[var(--card-border)] bg-[var(--card)] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+          <footer className="sticky bottom-0 border-t border-[var(--card-border)] bg-[var(--surface-elevated)] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
             <button type="button" onClick={close} className={`${btnPrimary} h-10 w-full text-[14px]`}>
               查看结果（共 {total} 位）
             </button>

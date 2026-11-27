@@ -1,4 +1,5 @@
 import { MotionConfig, motion } from 'motion/react';
+import { EASE_OUT } from './components/Motion.js';
 import { LogOut, Moon, Sun } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -119,7 +120,7 @@ export function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <header className="sticky top-0 z-40 flex h-12 items-center justify-between gap-2 border-b border-[var(--card-border)] bg-[color-mix(in_srgb,var(--card)_88%,transparent)] px-3.5 backdrop-blur md:gap-4 md:px-6">
+      <header className="sticky top-0 z-40 flex h-12 items-center justify-between gap-2 border-b border-[var(--card-border)] bg-[color-mix(in_srgb,var(--surface-elevated)_92%,transparent)] px-3.5 backdrop-blur md:gap-4 md:px-6">
         <div className="flex h-full min-w-0 items-center gap-3 md:gap-8">
           <span className="shrink-0 whitespace-nowrap text-[16px] font-semibold tracking-tight">保顾 CRM</span>
           <nav aria-label="主导航" className="flex h-full items-center gap-0.5 md:gap-1">
@@ -145,7 +146,7 @@ export function App() {
                   <motion.span
                     layoutId="nav-underline"
                     className="absolute inset-x-1.5 bottom-0 h-0.5 bg-[var(--foreground)] md:inset-x-2"
-                    transition={{ type: 'spring', stiffness: 520, damping: 40 }}
+                    transition={{ duration: 0.16, ease: EASE_OUT }}
                   />
                 )}
               </button>

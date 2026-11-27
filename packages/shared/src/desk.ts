@@ -3,6 +3,9 @@ import type { Customer, Interaction } from './schemas.js';
 export const CALL_FILTERS = ['all', 'never_called', 'exclude_7d', 'exclude_rejected', 'invited'] as const;
 export type CallFilter = (typeof CALL_FILTERS)[number];
 
+export const FOLLOWUP_VIEWS = ['all', 'today', 'overdue', 'priority'] as const;
+export type FollowupView = (typeof FOLLOWUP_VIEWS)[number];
+
 export const DESK_SORT_FIELDS = ['premium', 'age', 'call_count', 'last_call_at'] as const;
 export type DeskSortField = (typeof DESK_SORT_FIELDS)[number];
 
@@ -33,6 +36,7 @@ export interface DeskResponse {
   total: number;
   limit: number;
   offset: number;
+  view_counts?: Record<FollowupView, number>;
 }
 
 export function ageFromBirthday(

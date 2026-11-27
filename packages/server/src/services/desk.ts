@@ -2,6 +2,8 @@ import {
   type CallFilter,
   CALL_FILTERS,
   DESK_SORT_FIELDS,
+  FOLLOWUP_VIEWS,
+  type FollowupView,
   type Customer,
   type DeskCustomer,
   type DeskResponse,
@@ -20,6 +22,7 @@ export interface DeskQuery {
   max_premium?: number;
   address_query?: string;
   call_filter?: string;
+  view?: string;
   sort_by?: string;
   sort_dir?: string;
   limit?: number;
@@ -38,9 +41,20 @@ async function loadAllActiveCustomers(store: CrmStore): Promise<Customer[]> {
 
 const DAY_MS = 86_400_000;
 
+function matchesView(c: Customer, view: FollowupView, startOfToday: number, startOfTomorrow: number): boolean {
+  if (view === 'all') return true;
+  if (view === 'priority') return c.visit_priority === 'high';
+  if (!c.next_followup_at) return false;
+  const ts = Date.parse(c.next_followup_at);
+  if (Number.isNaN(ts)) return false;
+  if (view === 'today') return ts >= startOfToday && ts < startOfTomorrow;
+  if (view === 'overdue') return ts < startOfToday;
+  return true;
+}
+
 /**
  * Outbound-call desk query: multi-dimension filtering (gender / age / premium / address /
- * call history) with call-count aggregation and plaintext ID for the authenticated advisor.
+ * call history / followup view) with call-count aggregation and plaintext ID for the authenticated advisor.
  */
 export async function queryDesk(store: CrmStore, q: DeskQuery): Promise<DeskResponse> {
   const limit = Math.min(Math.max(Number.isFinite(q.limit) ? Math.trunc(q.limit!) : 50, 1), 200);
@@ -48,11 +62,17 @@ export async function queryDesk(store: CrmStore, q: DeskQuery): Promise<DeskResp
   const callFilter: CallFilter = (CALL_FILTERS as readonly string[]).includes(q.call_filter ?? '')
     ? (q.call_filter as CallFilter)
     : 'all';
+  const view: FollowupView = (FOLLOWUP_VIEWS as readonly string[]).includes(q.view ?? '')
+    ? (q.view as FollowupView)
+    : 'all';
   const sortBy: DeskSortField = (DESK_SORT_FIELDS as readonly string[]).includes(q.sort_by ?? '')
     ? (q.sort_by as DeskSortField)
     : 'premium';
   const dir = q.sort_dir === 'asc' ? 1 : -1;
-  const now = Date.now();
+  const nowDate = new Date();
+  const now = nowDate.getTime();
+  const startOfToday = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
+  const startOfTomorrow = startOfToday + DAY_MS;
 
   const [all, stats] = await Promise.all([loadAllActiveCustomers(store), store.getPhoneCallStats()]);
 
@@ -60,7 +80,7 @@ export async function queryDesk(store: CrmStore, q: DeskQuery): Promise<DeskResp
   const textDigits = q.query?.replace(/\D/g, '') ?? '';
   const addr = q.address_query?.trim().toLowerCase();
 
-  const rows = all
+  const baseRows = all
     .map((c) => ({
       customer: c,
       stats: stats.get(c.id) ?? EMPTY_CALL_STATS,
@@ -97,6 +117,23 @@ export async function queryDesk(store: CrmStore, q: DeskQuery): Promise<DeskResp
           return true;
       }
     });
+
+  const view_counts: Record<FollowupView, number> = {
+    all: baseRows.length,
+    today: 0,
+    overdue: 0,
+    priority: 0,
+  };
+  for (const r of baseRows) {
+    if (matchesView(r.customer, 'today', startOfToday, startOfTomorrow)) view_counts.today += 1;
+    if (matchesView(r.customer, 'overdue', startOfToday, startOfTomorrow)) view_counts.overdue += 1;
+    if (matchesView(r.customer, 'priority', startOfToday, startOfTomorrow)) view_counts.priority += 1;
+  }
+
+  const rows =
+    view === 'all'
+      ? baseRows
+      : baseRows.filter((r) => matchesView(r.customer, view, startOfToday, startOfTomorrow));
 
   const sortValue = (r: (typeof rows)[number]): number | null => {
     switch (sortBy) {
@@ -138,5 +175,5 @@ export async function queryDesk(store: CrmStore, q: DeskQuery): Promise<DeskResp
     id_no: idMap.get(r.customer.id) ?? null,
   }));
 
-  return { items, total: rows.length, limit, offset };
+  return { items, total: rows.length, limit, offset, view_counts };
 }

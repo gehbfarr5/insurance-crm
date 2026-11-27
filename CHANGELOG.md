@@ -2,6 +2,18 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/) 语义化版本规范，每次正式上线或结构性迭代均更新本文件并打 Git Annotated Tag（`vX.Y.Z`）。
 
+## [1.1.0] - 2026-11-28
+
+对标 Twenty / Linear 现代效率工具体系，完成工作台视觉规范、克制动效体系、快捷视图与跟进时间轴升级。
+
+### Changed
+- **Design Tokens 与明暗双主题重做（`index.css` / `lib/ui.ts`）**：重构 `light-dark(...)` 双主题色板（浅灰画布 `#f8f9fa` / 深炭灰 `#111215` 搭配 `1px` 极细边框），去除多余重阴影，统一柔和浅底语义徽章（`badgeCls`）。
+- **克制动效体系（`Motion.tsx` / `App.tsx` / `index.css`）**：移除高频弹簧弹跳（`spring`），统一使用 `120ms~180ms` + `cubic-bezier(0.2, 0, 0, 1)` 减速曲线，并新增 `Collapsible` 折叠过渡。
+- **工作台顶部视图与折叠筛选栏（`FilterBar.tsx` / `DeskPage.tsx`）**：顶部新增「全部 / 今日待跟进 / 已逾期 / 重点跟进」快捷视图切换与实时计数角标，高级筛选条件默认折叠收纳。
+- **高密度客户列表与悬停快捷操作（`DeskTable.tsx` / `DeskCardList.tsx`）**：新增「阶段 / 下次跟进」列（逾期与今日到期高亮提示），将速记与行内改阶段收敛为行悬停平滑浮现操作区。
+- **Twenty 式客户详情抽屉与时间轴（`CustomerDrawer.tsx`）**：新增头部阶段/重点跟进切换与下次跟进日期选择器、支持 `Cmd/Ctrl + Enter` 的快捷写跟进框、扁平双列核心资料表，以及合并 `interactions` 与 `followups` 的倒序跟进时间轴。
+- **后端工作台视图过滤（`shared/src/desk.ts` / `server/src/services/desk.ts` / `routes/api.ts`）**：`GET /api/v1/desk/customers` 新增 `view` 筛选参数并返回 `view_counts` 统计计数。
+
 ## [1.0.0] - 2026-11-27
 
 首个完整生产版本，作为 [保险规划师自主工作系统 (`insurance-autonomous-work-system`)](https://github.com/gehbfarr5/insurance-autonomous-work-system) **领域 A（客户经营）** 的个人自建客户库与多端外呼中枢正式部署上线。

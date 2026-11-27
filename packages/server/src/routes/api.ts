@@ -160,6 +160,7 @@ export function registerApiRoutes(
           max_premium: num(q.max_premium),
           address_query: q.address_query,
           call_filter: q.call_filter,
+          view: q.view,
           sort_by: q.sort_by,
           sort_dir: q.sort_dir,
           limit: num(q.limit),

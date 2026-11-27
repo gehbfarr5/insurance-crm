@@ -1,7 +1,8 @@
-import type { CallFilter, DeskSortField } from '@insurance-crm/shared';
+import type { CallFilter, DeskSortField, FollowupView } from '@insurance-crm/shared';
 import type { DeskQueryParams } from '../api.js';
 
 export interface DeskFilters {
+  view: FollowupView;
   query: string;
   gender: '' | '男' | '女';
   minAge: string;
@@ -15,6 +16,7 @@ export interface DeskFilters {
 }
 
 export const DEFAULT_FILTERS: DeskFilters = {
+  view: 'all',
   query: '',
   gender: '',
   minAge: '',
@@ -57,6 +59,7 @@ export function toDeskParams(f: DeskFilters, offset: number, limit: number): Des
   const minWan = numOrUndef(f.minWan);
   const maxWan = numOrUndef(f.maxWan);
   return {
+    view: f.view === 'all' ? undefined : f.view,
     query: f.query.trim() || undefined,
     gender: f.gender || undefined,
     min_age: numOrUndef(f.minAge),

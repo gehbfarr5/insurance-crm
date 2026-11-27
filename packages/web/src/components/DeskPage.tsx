@@ -1,9 +1,9 @@
-import type { CallStats, DeskCustomer } from '@insurance-crm/shared';
+import type { CallStats, Customer, DeskCustomer, FollowupView } from '@insurance-crm/shared';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiUnauthorizedError, type SyncStatusResponse, api } from '../api.js';
-import { buildInfoCard, copyText } from '../lib/format.js';
 import { DEFAULT_FILTERS, type DeskFilters, loadFilters, saveFilters, toDeskParams } from '../lib/desk-filters.js';
+import { buildInfoCard, copyText, RAPPORT_LABEL } from '../lib/format.js';
 import { pushToast } from '../lib/toast-bus.js';
 import { btn } from '../lib/ui.js';
 import { CustomerDrawer } from './CustomerDrawer.js';
@@ -54,6 +54,7 @@ export function DeskPage({
   const [offset, setOffset] = useState(0);
   const [items, setItems] = useState<DeskCustomer[]>([]);
   const [total, setTotal] = useState(0);
+  const [viewCounts, setViewCounts] = useState<Record<FollowupView, number> | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -76,6 +77,7 @@ export function DeskPage({
         if (reqId !== reqRef.current) return;
         setItems(res.items);
         setTotal(res.total);
+        if (res.view_counts) setViewCounts(res.view_counts);
         setError(null);
       } catch (err) {
         if (reqId !== reqRef.current) return;
@@ -87,7 +89,7 @@ export function DeskPage({
       } finally {
         if (reqId === reqRef.current) setLoading(false);
       }
-    }, 220);
+    }, 180);
     return () => window.clearTimeout(t);
   }, [filters, offset, reloadKey, onUnauthorized]);
 
@@ -160,6 +162,36 @@ export function DeskPage({
     [items, copyInfoCard, commitCall, revert],
   );
 
+  const updateCustomerField = useCallback(
+    async (
+      c: DeskCustomer,
+      patch: Partial<Pick<Customer, 'rapport_tag' | 'visit_priority' | 'next_followup_at'>>,
+      successText?: string,
+    ) => {
+      const prevRow = items.find((x) => x.id === c.id) ?? c;
+      setItems((curr) => curr.map((x) => (x.id === c.id ? { ...x, ...patch } : x)));
+      try {
+        const updated = await api.updateCustomer(c.id, { expected_version: prevRow.version, ...patch });
+        setItems((curr) => curr.map((x) => (x.id === c.id ? { ...x, ...updated } : x)));
+        setDrawerTick((t) => t + 1);
+        setReloadKey((k) => k + 1);
+        if (successText) onToast(successText);
+      } catch (err) {
+        setItems((curr) => curr.map((x) => (x.id === c.id ? prevRow : x)));
+        onToast(`更新失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [items, onToast],
+  );
+
+  const handleChangeStage = useCallback(
+    (c: DeskCustomer, tag: Customer['rapport_tag']) => {
+      if (c.rapport_tag === tag) return;
+      void updateCustomerField(c, { rapport_tag: tag }, `${c.name} 已设为「${RAPPORT_LABEL[tag]}」`);
+    },
+    [updateCustomerField],
+  );
+
   // Post-call return loop: after tapping tel: and returning to the browser, offer 1-tap logging
   useEffect(() => {
     const onVisibility = () => {
@@ -229,6 +261,7 @@ export function DeskPage({
       <FilterBar
         filters={filters}
         total={total}
+        viewCounts={viewCounts}
         onChange={patchFilters}
         onReset={() => patchFilters({ ...DEFAULT_FILTERS })}
       />
@@ -241,7 +274,14 @@ export function DeskPage({
         <div className="grid flex-1 place-items-center py-20 text-[color:var(--muted-foreground)]">加载中…</div>
       ) : (
         <>
-          <DeskTable items={items} loading={loading} onOpen={openDrawer} onQuick={quickLog} onDial={handleDial} />
+          <DeskTable
+            items={items}
+            loading={loading}
+            onOpen={openDrawer}
+            onQuick={quickLog}
+            onDial={handleDial}
+            onChangeStage={handleChangeStage}
+          />
           <DeskCardList items={items} loading={loading} onOpen={openDrawer} onQuick={quickLog} onDial={handleDial} />
         </>
       )}
@@ -277,6 +317,7 @@ export function DeskPage({
         onClose={() => setDrawerOpen(false)}
         onQuick={quickLog}
         onDial={handleDial}
+        onUpdateField={updateCustomerField}
         onDeleteCustomer={deleteCustomer}
         sync={syncStatus}
         onToast={onToast}

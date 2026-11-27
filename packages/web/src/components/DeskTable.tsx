@@ -1,16 +1,19 @@
-import type { DeskCustomer } from '@insurance-crm/shared';
-import { Phone } from 'lucide-react';
-import { motion } from 'motion/react';
-import { fmtMoney, OUTCOME_LABEL, relTime } from '../lib/format.js';
+import { type Customer, type DeskCustomer, RAPPORT_TAGS } from '@insurance-crm/shared';
+import { Phone, Star } from 'lucide-react';
+import {
+  fmtMoney,
+  fmtShortDate,
+  followupUrgency,
+  OUTCOME_LABEL,
+  OUTCOME_TONE,
+  RAPPORT_LABEL,
+  RAPPORT_TONE,
+  relTime,
+} from '../lib/format.js';
+import { badgeCls } from '../lib/ui.js';
 import { RollingNumber } from './Motion.js';
 
 export type QuickOutcome = 'no_answer' | 'rejected' | 'invited';
-
-const OUTCOME_TONE: Record<string, string> = {
-  rejected: 'text-[color:var(--error)]',
-  invited: 'text-[color:var(--success)]',
-  attended: 'text-[color:var(--success)]',
-};
 
 function QuickButton({
   label,
@@ -26,26 +29,24 @@ function QuickButton({
       ? 'border-transparent bg-[var(--primary)] text-[color:var(--primary-foreground)] hover:opacity-90'
       : tone === 'danger'
         ? 'border-[var(--border)] bg-[var(--card)] text-[color:var(--foreground)] hover:border-[var(--error)] hover:text-[color:var(--error)]'
-        : 'border-[var(--border)] bg-[var(--card)] text-[color:var(--foreground)] hover:bg-[var(--secondary)]';
+        : 'border-[var(--border)] bg-[var(--card)] text-[color:var(--foreground)] hover:bg-[var(--hover)]';
   return (
-    <motion.button
+    <button
       type="button"
-      whileTap={{ scale: 0.94 }}
-      transition={{ type: 'spring', stiffness: 600, damping: 30 }}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
-      className={`touch-action h-7 shrink-0 cursor-pointer select-none whitespace-nowrap rounded-lg border px-2.5 text-[13px] font-medium transition-colors ${cls}`}
+      className={`touch-action h-7 shrink-0 cursor-pointer select-none whitespace-nowrap rounded-md border px-2 text-[13px] font-medium transition-[background-color,border-color,color,opacity] duration-120 ease-[cubic-bezier(0.2,0,0,1)] ${cls}`}
     >
       {label}
-    </motion.button>
+    </button>
   );
 }
 
 export function QuickActions({ onQuick }: { onQuick: (o: QuickOutcome) => void }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1">
       <QuickButton label="未接" tone="ghost" onClick={() => onQuick('no_answer')} />
       <QuickButton label="拒绝" tone="danger" onClick={() => onQuick('rejected')} />
       <QuickButton label="邀约 ✓" tone="primary" onClick={() => onQuick('invited')} />
@@ -55,19 +56,43 @@ export function QuickActions({ onQuick }: { onQuick: (o: QuickOutcome) => void }
 
 export function CallSummary({ c }: { c: DeskCustomer }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="tnum whitespace-nowrap font-medium">
         <RollingNumber value={c.call_count} /> <span className="font-normal text-[color:var(--muted-foreground)]">次</span>
       </span>
       {c.last_call_at && c.last_call_outcome && (
-        <span className="whitespace-nowrap text-[13px] text-[color:var(--muted-foreground)]">
-          {relTime(c.last_call_at)} ·{' '}
-          <span className={OUTCOME_TONE[c.last_call_outcome] ?? ''}>{OUTCOME_LABEL[c.last_call_outcome]}</span>
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span className="tnum text-[13px] text-[color:var(--muted-foreground)]">{relTime(c.last_call_at)}</span>
+          <span className={badgeCls(OUTCOME_TONE[c.last_call_outcome] ?? 'neutral')}>
+            {OUTCOME_LABEL[c.last_call_outcome] ?? c.last_call_outcome}
+          </span>
         </span>
       )}
       {c.ever_rejected && c.last_call_outcome !== 'rejected' && (
-        <span className="whitespace-nowrap text-[13px] font-medium text-[color:var(--error)]">
-          曾拒绝
+        <span className={badgeCls('error')}>曾拒绝</span>
+      )}
+    </div>
+  );
+}
+
+export function FollowupStageCell({ c }: { c: DeskCustomer }) {
+  const urgency = followupUrgency(c.next_followup_at);
+  const dateText = fmtShortDate(c.next_followup_at);
+  const dateCls =
+    urgency === 'overdue'
+      ? 'text-[color:var(--error)] font-medium'
+      : urgency === 'today'
+        ? 'text-[color:var(--warning)] font-medium'
+        : 'text-[color:var(--muted-foreground)]';
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className={badgeCls(RAPPORT_TONE[c.rapport_tag] ?? 'neutral')}>
+        {RAPPORT_LABEL[c.rapport_tag] ?? c.rapport_tag}
+      </span>
+      {dateText && (
+        <span className={`tnum whitespace-nowrap text-[13px] ${dateCls}`}>
+          {urgency === 'overdue' ? `逾期 ${dateText}` : urgency === 'today' ? `今日` : dateText}
         </span>
       )}
     </div>
@@ -96,8 +121,8 @@ export function DialLink({
       title="点击直接拨号"
       className={
         compact
-          ? 'tnum inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 font-medium text-[color:var(--foreground)] transition-colors hover:bg-[var(--card)]'
-          : 'tnum inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--secondary)] px-3 text-[13px] font-medium text-[color:var(--foreground)] transition-colors active:scale-[0.97]'
+          ? 'tnum inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 font-medium text-[color:var(--foreground)] transition-colors duration-120 hover:bg-[var(--secondary)]'
+          : 'tnum inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--border)] bg-[var(--secondary)] px-3 text-[13px] font-medium text-[color:var(--foreground)] transition-colors duration-120'
       }
     >
       <Phone className="size-3.5 shrink-0 text-[color:var(--muted-foreground)]" aria-hidden="true" />
@@ -112,12 +137,14 @@ export function DeskTable({
   onOpen,
   onQuick,
   onDial,
+  onChangeStage,
 }: {
   items: DeskCustomer[];
   loading: boolean;
   onOpen: (c: DeskCustomer) => void;
   onQuick: (c: DeskCustomer, o: QuickOutcome) => void;
   onDial: (c: DeskCustomer) => void;
+  onChangeStage: (c: DeskCustomer, tag: Customer['rapport_tag']) => void;
 }) {
   return (
     <div
@@ -128,51 +155,58 @@ export function DeskTable({
       aria-busy={loading}
     >
       <table className="desk-table">
-        <caption className="sr-only">客户筛选与外呼列表</caption>
+        <caption className="sr-only">客户筛选与跟进列表</caption>
         <thead>
           <tr>
             <th scope="col">客户</th>
+            <th scope="col">阶段 / 下次跟进</th>
             <th scope="col" className="text-right">
               总保费
             </th>
             <th scope="col">居住地址</th>
             <th scope="col">拨号</th>
             <th scope="col">外呼记录</th>
-            <th scope="col">速记</th>
+            <th scope="col" className="text-right">
+              快捷操作
+            </th>
           </tr>
         </thead>
-        <tbody className={loading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+        <tbody className={loading ? 'opacity-60 transition-opacity duration-120' : 'transition-opacity duration-120'}>
           {items.map((c) => (
-            <motion.tr
-              key={c.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.16 }}
-              onClick={() => onOpen(c)}
-              className="cursor-pointer"
-            >
+            <tr key={c.id} onClick={() => onOpen(c)} className="cursor-pointer">
               <td>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpen(c);
-                  }}
-                  className="cursor-pointer text-left font-medium hover:underline"
-                >
-                  {c.name}
-                </button>
-                <div className="text-[13px] text-[color:var(--muted-foreground)]">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpen(c);
+                    }}
+                    className="cursor-pointer text-left font-medium hover:underline"
+                  >
+                    {c.name}
+                  </button>
+                  {c.visit_priority === 'high' && (
+                    <Star
+                      aria-label="重点跟进"
+                      className="size-3.5 shrink-0 fill-[var(--warning)] text-[color:var(--warning)]"
+                    />
+                  )}
+                </div>
+                <div className="tnum text-[13px] text-[color:var(--muted-foreground)]">
                   {[c.gender !== '未知' ? c.gender : '', c.age != null ? `${c.age}岁` : ''].filter(Boolean).join(' · ') || '—'}
                 </div>
+              </td>
+              <td>
+                <FollowupStageCell c={c} />
               </td>
               <td className="text-right">
                 <div className="tnum font-medium">{fmtMoney(c.total_premium)}</div>
                 {c.policy_total > 0 && (
-                  <div className="text-[13px] text-[color:var(--muted-foreground)]">{c.policy_total} 张保单</div>
+                  <div className="tnum text-[13px] text-[color:var(--muted-foreground)]">{c.policy_total} 张保单</div>
                 )}
               </td>
-              <td className="max-w-[20rem]">
+              <td className="max-w-[16rem]">
                 <div className="truncate" title={c.address ?? undefined}>
                   {c.address ?? <span className="text-[color:var(--muted-foreground)]">—</span>}
                 </div>
@@ -183,15 +217,33 @@ export function DeskTable({
               <td>
                 <CallSummary c={c} />
               </td>
-              <td>
-                <QuickActions onQuick={(o) => onQuick(c, o)} />
+              <td className="text-right">
+                <div className="desk-row-actions inline-flex items-center justify-end gap-1.5">
+                  <select
+                    aria-label={`修改 ${c.name} 阶段`}
+                    value={c.rapport_tag}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onChangeStage(c, e.target.value as Customer['rapport_tag']);
+                    }}
+                    className="h-7 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--card)] px-1.5 text-[13px] text-[color:var(--foreground)] outline-none transition-colors duration-120 hover:bg-[var(--hover)]"
+                  >
+                    {RAPPORT_TAGS.map((tag) => (
+                      <option key={tag} value={tag}>
+                        {RAPPORT_LABEL[tag]}
+                      </option>
+                    ))}
+                  </select>
+                  <QuickActions onQuick={(o) => onQuick(c, o)} />
+                </div>
               </td>
-            </motion.tr>
+            </tr>
           ))}
         </tbody>
       </table>
       {items.length === 0 && !loading && (
-        <div className="py-20 text-center text-[color:var(--muted-foreground)]">没有符合条件的客户，试试放宽筛选</div>
+        <div className="py-20 text-center text-[color:var(--muted-foreground)]">没有符合条件的客户，试试切换视图或放宽筛选</div>
       )}
     </div>
   );

@@ -66,6 +66,7 @@ export interface DeskQueryParams {
   max_premium?: number;
   address_query?: string;
   call_filter?: string;
+  view?: string;
   sort_by?: string;
   sort_dir?: string;
   limit?: number;
