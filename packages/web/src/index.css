@@ -72,7 +72,10 @@
   }
   /* Top-layer manual popovers for Toasts (always float above modal dialogs/drawers, pinned bottom-center) */
   [popover].top-toast-layer {
+    position: fixed;
     inset: auto 0 max(1rem, env(safe-area-inset-bottom, 0px)) 0;
+    inline-size: 100%;
+    box-sizing: border-box;
     margin: 0;
     padding: 0;
     border: 0;

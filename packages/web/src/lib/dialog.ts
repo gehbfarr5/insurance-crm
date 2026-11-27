@@ -66,7 +66,10 @@ export function useDialogControl(open: boolean, onClose: () => void) {
         void closeTopLayer(d);
       }
     };
-    const onNativeClose = () => onCloseRef.current();
+    const onNativeClose = () => {
+      onCloseRef.current();
+      notifyTopLayerChanged();
+    };
     const onClick = (e: MouseEvent) => {
       if (e.target === d) void closeTopLayer(d);
     };

@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Phone, Undo2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   chooseDialResult,
   chooseToastReason,
@@ -11,19 +12,35 @@ import {
   type ToastEntry,
   undoToast,
 } from '../lib/toast-bus.js';
-import { useTopLayerPopover } from '../lib/top-layer.js';
+import { TOP_LAYER_EVENT, useTopLayerPopover } from '../lib/top-layer.js';
 import { QuickActions } from './DeskTable.js';
+
+function resolveTopLayerTarget(): HTMLElement {
+  const modals = document.querySelectorAll('dialog:modal');
+  const open = modals.length > 0 ? modals : document.querySelectorAll('dialog[open]');
+  return (open[open.length - 1] as HTMLElement | undefined) ?? document.body;
+}
 
 /**
  * Single unified bottom Top-Layer toast stack (`popover="manual"`).
- * Renders all notifications, undoable actions, reject reasons, and post-call prompts
- * in one consistent bottom position above every open dialog/drawer.
+ * Portals into the active modal <dialog> when one is open (so it is never marked `inert`),
+ * and renders centered at the bottom above every dialog/drawer.
  */
 export function BottomToastHost() {
   const [items, setItems] = useState<ToastEntry[]>([]);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement>(() =>
+    typeof document !== 'undefined' ? resolveTopLayerTarget() : (null as unknown as HTMLElement),
+  );
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => subscribeToasts(setItems), []);
+
+  useEffect(() => {
+    const syncTarget = () => setPortalTarget(resolveTopLayerTarget());
+    syncTarget();
+    window.addEventListener(TOP_LAYER_EVENT, syncTarget);
+    return () => window.removeEventListener(TOP_LAYER_EVENT, syncTarget);
+  }, [items.length]);
 
   useEffect(() => {
     const onHide = () => flushPendingToasts();
@@ -31,9 +48,11 @@ export function BottomToastHost() {
     return () => window.removeEventListener('pagehide', onHide);
   }, []);
 
-  useTopLayerPopover(ref, items.length > 0, items.map((i) => i.id).join(','));
+  useTopLayerPopover(ref, items.length > 0, `${items.map((i) => i.id).join(',')}:${portalTarget?.tagName ?? ''}`);
 
-  return (
+  if (!portalTarget) return null;
+
+  return createPortal(
     <div
       ref={ref}
       popover="manual"
@@ -57,7 +76,7 @@ export function BottomToastHost() {
             onBlur={(e) => {
               if (!e.currentTarget.contains(e.relatedTarget as Node)) hoverToast(it.id, false);
             }}
-            className="pointer-events-auto relative w-[min(32rem,100%)] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-[0_12px_32px_-8px_rgb(0_0_0/0.24)]"
+            className="pointer-events-auto relative mx-auto w-[min(32rem,100%)] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-[0_12px_32px_-8px_rgb(0_0_0/0.24)]"
           >
             {it.dialCustomer ? (
               <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5">
@@ -110,17 +129,18 @@ export function BottomToastHost() {
               </div>
             )}
 
-            {it.durationMs > 0 && !it.paused && (it.onUndo || it.reasonChips) && (
+            {it.durationMs > 0 && (it.onUndo || it.reasonChips) && (
               <motion.div
                 initial={{ scaleX: 1 }}
-                animate={{ scaleX: 0 }}
-                transition={{ duration: it.durationMs / 1000, ease: 'linear' }}
-                className="h-0.5 origin-left bg-[var(--foreground)] opacity-60"
+                animate={{ scaleX: it.paused ? 1 : 0 }}
+                transition={{ duration: it.paused ? 0.15 : it.durationMs / 1000, ease: 'linear' }}
+                className={`h-0.5 origin-left bg-[var(--foreground)] ${it.paused ? 'opacity-20' : 'opacity-60'}`}
               />
             )}
           </motion.div>
         ))}
       </AnimatePresence>
-    </div>
+    </div>,
+    portalTarget,
   );
 }
