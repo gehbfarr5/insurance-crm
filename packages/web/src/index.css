@@ -65,23 +65,22 @@
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--foreground) 20%, transparent) transparent;
   }
+  /* Top-layer manual popovers for Toasts (always float above modal dialogs/drawers, pinned bottom-center) */
+  [popover].top-toast-layer {
+    inset: auto 0 1rem 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--foreground);
+    overflow: visible;
+    max-width: none;
+    max-height: none;
+  }
 }
 
 .tnum {
   font-variant-numeric: tabular-nums;
-}
-
-/* Top-layer manual popovers for Toasts (always float above modal dialogs/drawers) */
-[popover].top-toast-layer {
-  inset: auto;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--foreground);
-  overflow: visible;
-  max-width: none;
-  max-height: none;
 }
 
 /* Native dialog + drawer (top-layer enter/exit transitions) */

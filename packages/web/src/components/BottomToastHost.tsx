@@ -37,7 +37,7 @@ export function BottomToastHost() {
     <div
       ref={ref}
       popover="manual"
-      className="top-toast-layer pointer-events-none fixed inset-x-0 bottom-[calc(1rem+env(safe-area-inset-bottom))] flex flex-col items-center gap-2 px-3"
+      className="top-toast-layer pointer-events-none fixed inset-x-0 bottom-4 flex flex-col items-center gap-2 px-3"
       aria-live="polite"
     >
       <AnimatePresence initial={false}>
