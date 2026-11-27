@@ -32,17 +32,20 @@ export function KjgxCapsule({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 text-[12.5px] transition-colors hover:bg-[var(--secondary)]"
+      className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 text-[12px] transition-colors hover:bg-[var(--secondary)] sm:gap-2 sm:px-3 sm:text-[12.5px]"
     >
       <motion.span
         aria-hidden="true"
-        className={`size-2 rounded-full ${DOT[state]}`}
+        className={`size-2 shrink-0 rounded-full ${DOT[state]}`}
         animate={state === 'checking' ? { opacity: [1, 0.3, 1] } : { opacity: 1 }}
         transition={state === 'checking' ? { duration: 1.2, repeat: Infinity } : undefined}
       />
       <span>
-        科技个险 · {LABEL[state]}
-        {state === 'connected' && status?.emp_name ? ` · ${status.emp_name}` : ''}
+        <span className="hidden sm:inline">科技个险 · </span>
+        {LABEL[state]}
+        {state === 'connected' && status?.emp_name ? (
+          <span className="hidden md:inline"> · {status.emp_name}</span>
+        ) : null}
       </span>
     </button>
   );

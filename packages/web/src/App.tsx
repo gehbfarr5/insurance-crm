@@ -125,17 +125,17 @@ export function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <header className="sticky top-0 z-40 flex h-12 items-center justify-between gap-4 border-b border-[var(--card-border)] bg-[color-mix(in_srgb,var(--card)_88%,transparent)] px-6 backdrop-blur">
-        <div className="flex h-full items-center gap-8">
-          <span className="text-[14px] font-semibold tracking-tight">保顾 CRM</span>
-          <nav aria-label="主导航" className="flex h-full items-center gap-1">
+      <header className="sticky top-0 z-40 flex h-12 items-center justify-between gap-2 border-b border-[var(--card-border)] bg-[color-mix(in_srgb,var(--card)_88%,transparent)] px-3.5 backdrop-blur md:gap-4 md:px-6">
+        <div className="flex h-full min-w-0 items-center gap-3 md:gap-8">
+          <span className="shrink-0 whitespace-nowrap text-[14px] font-semibold tracking-tight">保顾 CRM</span>
+          <nav aria-label="主导航" className="flex h-full items-center gap-0.5 md:gap-1">
             {NAV.map((n) => (
               <button
                 key={n.id}
                 type="button"
                 aria-current={page === n.id ? 'page' : undefined}
                 onClick={() => goto(n.id)}
-                className={`relative flex h-full cursor-pointer items-center gap-1.5 px-3 text-[13px] transition-colors ${
+                className={`relative flex h-full shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap px-2 text-[12.5px] transition-colors md:px-3 md:text-[13px] ${
                   page === n.id ? 'font-medium text-[color:var(--foreground)]' : 'text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]'
                 }`}
               >
@@ -148,7 +148,7 @@ export function App() {
                 {page === n.id && (
                   <motion.span
                     layoutId="nav-underline"
-                    className="absolute inset-x-2 bottom-0 h-0.5 bg-[var(--foreground)]"
+                    className="absolute inset-x-1.5 bottom-0 h-0.5 bg-[var(--foreground)] md:inset-x-2"
                     transition={{ type: 'spring', stiffness: 520, damping: 40 }}
                   />
                 )}
@@ -156,7 +156,7 @@ export function App() {
             ))}
           </nav>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
           <KjgxCapsule state={kjgx.state} status={kjgx.status} onClick={() => setKjgxOpen(true)} />
           <button
             type="button"

@@ -1,4 +1,5 @@
 import type { DeskCustomer } from '@insurance-crm/shared';
+import { Phone } from 'lucide-react';
 import { motion } from 'motion/react';
 import { fmtMoney, OUTCOME_LABEL, relTime } from '../lib/format.js';
 import { RollingNumber } from './Motion.js';
@@ -35,7 +36,7 @@ function QuickButton({
         e.stopPropagation();
         onClick();
       }}
-      className={`h-7 cursor-pointer select-none rounded-lg border px-2.5 text-[12.5px] font-medium transition-colors ${cls}`}
+      className={`h-7 shrink-0 cursor-pointer select-none whitespace-nowrap rounded-lg border px-2.5 text-[12.5px] font-medium transition-colors ${cls}`}
     >
       {label}
     </motion.button>
@@ -54,20 +55,54 @@ export function QuickActions({ onQuick }: { onQuick: (o: QuickOutcome) => void }
 
 export function CallSummary({ c }: { c: DeskCustomer }) {
   return (
-    <div className="flex items-center gap-2 whitespace-nowrap">
-      <span className="tnum font-medium">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      <span className="tnum whitespace-nowrap font-medium">
         <RollingNumber value={c.call_count} /> <span className="font-normal text-[color:var(--muted-foreground)]">次</span>
       </span>
       {c.last_call_at && c.last_call_outcome && (
-        <span className="text-[12px] text-[color:var(--muted-foreground)]">
+        <span className="whitespace-nowrap text-[12px] text-[color:var(--muted-foreground)]">
           {relTime(c.last_call_at)} ·{' '}
           <span className={OUTCOME_TONE[c.last_call_outcome] ?? ''}>{OUTCOME_LABEL[c.last_call_outcome]}</span>
         </span>
       )}
       {c.ever_rejected && c.last_call_outcome !== 'rejected' && (
-        <span className="rounded-full border border-[var(--card-border)] px-1.5 text-[11px] text-[color:var(--error)]">曾拒绝</span>
+        <span className="whitespace-nowrap rounded-full border border-[var(--card-border)] px-1.5 text-[11px] text-[color:var(--error)]">
+          曾拒绝
+        </span>
       )}
     </div>
+  );
+}
+
+export function DialLink({
+  customer,
+  onDial,
+  compact = false,
+}: {
+  customer: DeskCustomer;
+  onDial: (c: DeskCustomer) => void;
+  compact?: boolean;
+}) {
+  if (!customer.primary_phone) {
+    return <span className="text-[color:var(--muted-foreground)]">—</span>;
+  }
+  return (
+    <a
+      href={`tel:${customer.primary_phone}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onDial(customer);
+      }}
+      title="点击直接拨号"
+      className={
+        compact
+          ? 'tnum inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 font-medium text-[color:var(--foreground)] transition-colors hover:bg-[var(--card)]'
+          : 'tnum inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--secondary)] px-2.5 text-[12.5px] font-medium text-[color:var(--foreground)] transition-colors active:scale-[0.97]'
+      }
+    >
+      <Phone className="size-3.5 shrink-0 text-[color:var(--muted-foreground)]" aria-hidden="true" />
+      <span>{customer.primary_phone}</span>
+    </a>
   );
 }
 
@@ -76,16 +111,16 @@ export function DeskTable({
   loading,
   onOpen,
   onQuick,
-  onCopyPhone,
+  onDial,
 }: {
   items: DeskCustomer[];
   loading: boolean;
   onOpen: (c: DeskCustomer) => void;
   onQuick: (c: DeskCustomer, o: QuickOutcome) => void;
-  onCopyPhone: (c: DeskCustomer) => void;
+  onDial: (c: DeskCustomer) => void;
 }) {
   return (
-    <div className="desk-scroll min-h-0 flex-1" aria-busy={loading}>
+    <div className="desk-scroll hidden min-h-0 flex-1 md:block" aria-busy={loading}>
       <table className="desk-table">
         <caption className="sr-only">客户筛选与外呼列表</caption>
         <thead>
@@ -95,7 +130,7 @@ export function DeskTable({
               总保费
             </th>
             <th scope="col">居住地址</th>
-            <th scope="col">手机号</th>
+            <th scope="col">拨号</th>
             <th scope="col">外呼记录</th>
             <th scope="col">速记</th>
           </tr>
@@ -137,21 +172,7 @@ export function DeskTable({
                 </div>
               </td>
               <td>
-                {c.primary_phone ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCopyPhone(c);
-                    }}
-                    title="点击复制"
-                    className="tnum cursor-pointer rounded px-1 py-0.5 hover:bg-[var(--card)]"
-                  >
-                    {c.primary_phone}
-                  </button>
-                ) : (
-                  <span className="text-[color:var(--muted-foreground)]">—</span>
-                )}
+                <DialLink customer={c} onDial={onDial} compact />
               </td>
               <td>
                 <CallSummary c={c} />

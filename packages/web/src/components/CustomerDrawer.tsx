@@ -1,5 +1,5 @@
 import type { DeskCustomer, Interaction } from '@insurance-crm/shared';
-import { Check, Contact, Copy, Pencil, Trash2, X } from 'lucide-react';
+import { Check, Contact, Copy, Pencil, Phone, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { type Customer360Response, type SyncStatusResponse, api } from '../api.js';
 import { useDialogControl } from '../lib/dialog.js';
@@ -35,6 +35,7 @@ export function CustomerDrawer({
   open,
   onClose,
   onQuick,
+  onDial,
   sync,
   onToast,
   onChanged,
@@ -44,6 +45,7 @@ export function CustomerDrawer({
   open: boolean;
   onClose: () => void;
   onQuick: (c: DeskCustomer, o: QuickOutcome) => void;
+  onDial: (c: DeskCustomer) => void;
   sync: SyncStatusResponse | null;
   onToast: (msg: string) => void;
   onChanged: () => void;
@@ -159,8 +161,8 @@ export function CustomerDrawer({
     <>
       <dialog ref={ref} className="drawer" aria-labelledby={titleId}>
         {customer && (
-          <div className="flex min-h-full flex-col">
-            <header className="sticky top-0 z-10 space-y-3 border-b border-[var(--card-border)] bg-[var(--card)] px-6 py-4">
+          <div className="flex min-h-full flex-col pb-[env(safe-area-inset-bottom)]">
+            <header className="sticky top-0 z-10 space-y-3 border-b border-[var(--card-border)] bg-[var(--card)] px-4 py-3.5 md:px-6 md:py-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 id={titleId} className="text-[17px] font-semibold">
@@ -208,9 +210,39 @@ export function CustomerDrawer({
               </div>
             </header>
 
-            <div className="space-y-6 px-6 py-5">
+            <div className="space-y-6 px-4 py-4 md:px-6 md:py-5">
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5">
-                <Fact label="手机" value={customer.primary_phone} />
+                <div className="min-w-0">
+                  <dt className="text-[12px] text-[color:var(--muted-foreground)]">手机（点击直接拨号）</dt>
+                  <dd className="mt-0.5 flex items-center gap-1.5">
+                    {customer.primary_phone ? (
+                      <>
+                        <a
+                          href={`tel:${customer.primary_phone}`}
+                          onClick={() => onDial(customer)}
+                          className="tnum inline-flex items-center gap-1.5 font-medium text-[color:var(--foreground)] hover:underline"
+                        >
+                          <Phone className="size-3.5 text-[color:var(--muted-foreground)]" aria-hidden="true" />
+                          {customer.primary_phone}
+                        </a>
+                        <button
+                          type="button"
+                          aria-label="复制手机号"
+                          onClick={() =>
+                            void copyText(customer.primary_phone!).then((ok) =>
+                              onToast(ok ? `已复制 ${customer.primary_phone}` : '复制失败'),
+                            )
+                          }
+                          className="grid size-6 cursor-pointer place-items-center rounded text-[color:var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[color:var(--foreground)]"
+                        >
+                          <Copy className="size-3" />
+                        </button>
+                      </>
+                    ) : (
+                      <span className="font-medium">—</span>
+                    )}
+                  </dd>
+                </div>
                 <Fact label="身份证" value={c?.id_no ?? customer.id_no} />
                 <Fact label="出生日期" value={customer.birthday} />
                 <Fact label="总保费" value={customer.total_premium ? `${fmtMoney(customer.total_premium)}（${customer.policy_total} 张）` : null} />

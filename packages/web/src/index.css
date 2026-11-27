@@ -156,9 +156,54 @@ dialog.drawer[open]:where(:not([data-closing])) {
   }
 }
 
+/* Bottom sheet (always on .bottom-sheet, and on .drawer below 768px) */
+dialog.bottom-sheet {
+  inset-block: auto 0;
+  inset-inline: 0;
+  margin: 0;
+  inline-size: 100vw;
+  max-inline-size: none;
+  max-block-size: 88dvh;
+  border-radius: 16px 16px 0 0;
+  border-inline-width: 0;
+  border-bottom-width: 0;
+  transform: translateY(100%);
+  opacity: 1;
+  box-shadow: 0 -20px 50px -20px rgb(0 0 0 / 0.35);
+}
+dialog.bottom-sheet[open]:where(:not([data-closing])) {
+  transform: none;
+}
+@starting-style {
+  dialog.bottom-sheet[open]:where(:not([data-closing])) {
+    transform: translateY(100%);
+  }
+}
+
+@media (max-width: 767px) {
+  dialog.drawer {
+    inset-block: auto 0;
+    inset-inline: 0;
+    inline-size: 100vw;
+    block-size: auto;
+    max-block-size: 92dvh;
+    border-radius: 16px 16px 0 0;
+    border-inline-width: 0;
+    border-bottom-width: 0;
+    transform: translateY(100%);
+    box-shadow: 0 -20px 50px -20px rgb(0 0 0 / 0.35);
+  }
+  @starting-style {
+    dialog.drawer[open]:where(:not([data-closing])) {
+      transform: translateY(100%);
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   dialog,
-  dialog.drawer {
+  dialog.drawer,
+  dialog.bottom-sheet {
     transform: none !important;
     transition-duration: 0.1s;
   }

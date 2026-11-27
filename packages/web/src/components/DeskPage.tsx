@@ -7,6 +7,7 @@ import { DEFAULT_FILTERS, type DeskFilters, loadFilters, saveFilters, toDeskPara
 import { btn } from '../lib/ui.js';
 import { CallToasts, PENDING_MS, type PendingView } from './CallToasts.js';
 import { CustomerDrawer } from './CustomerDrawer.js';
+import { DeskCardList } from './DeskCardList.js';
 import { DeskTable, type QuickOutcome } from './DeskTable.js';
 import { FilterBar } from './FilterBar.js';
 
@@ -63,6 +64,8 @@ export function DeskPage({
   const [selected, setSelected] = useState<DeskCustomer | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pendingView, setPendingView] = useState<PendingView[]>([]);
+  const [dialPrompt, setDialPrompt] = useState<DeskCustomer | null>(null);
+  const dialedRef = useRef<{ customer: DeskCustomer; at: number } | null>(null);
   const reqRef = useRef(0);
   const pendingRef = useRef(new Map<string, Pending>());
 
@@ -93,6 +96,22 @@ export function DeskPage({
     }, 220);
     return () => window.clearTimeout(t);
   }, [filters, offset, reloadKey, onUnauthorized]);
+
+  // Post-call return loop: after tapping tel: and switching back from phone dialer, offer 1-tap logging
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      const d = dialedRef.current;
+      if (!d) return;
+      const elapsed = Date.now() - d.at;
+      dialedRef.current = null;
+      if (elapsed >= 800 && elapsed <= 30 * 60_000) {
+        setDialPrompt(d.customer);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
   const patchFilters = useCallback((patch: Partial<DeskFilters>) => {
     setFilters((f) => ({ ...f, ...patch }));
@@ -198,6 +217,10 @@ export function DeskPage({
     if (outcome === 'invited') void copyInfoCard(c);
   };
 
+  const handleDial = (c: DeskCustomer) => {
+    dialedRef.current = { customer: c, at: Date.now() };
+  };
+
   // Flush un-committed quick logs if the tab is closed during the undo window.
   useEffect(() => {
     const flush = () => {
@@ -221,28 +244,39 @@ export function DeskPage({
   const to = Math.min(offset + PAGE_SIZE, total);
 
   return (
-    <div className="flex h-[calc(100dvh-3rem)] flex-col bg-[var(--card)]">
-      <FilterBar filters={filters} onChange={patchFilters} onReset={() => patchFilters({ ...DEFAULT_FILTERS })} />
+    <div className="flex min-h-[calc(100dvh-3rem)] flex-col bg-[var(--background)] md:h-[calc(100dvh-3rem)] md:bg-[var(--card)]">
+      <FilterBar
+        filters={filters}
+        total={total}
+        onChange={patchFilters}
+        onReset={() => patchFilters({ ...DEFAULT_FILTERS })}
+      />
       {error && (
-        <div role="alert" className="border-b border-[var(--card-border)] px-6 py-2 text-[color:var(--error)]">
+        <div role="alert" className="border-b border-[var(--card-border)] px-4 py-2 text-[color:var(--error)] md:px-6">
           加载失败：{error}
         </div>
       )}
       {loading && items.length === 0 ? (
-        <div className="grid flex-1 place-items-center text-[color:var(--muted-foreground)]">加载中…</div>
+        <div className="grid flex-1 place-items-center py-20 text-[color:var(--muted-foreground)]">加载中…</div>
       ) : (
-        <DeskTable
-          items={items}
-          loading={loading}
-          onOpen={openDrawer}
-          onQuick={quickLog}
-          onCopyPhone={(c) => {
-            if (!c.primary_phone) return;
-            void copyText(c.primary_phone).then((ok) => onToast(ok ? `已复制 ${c.primary_phone}` : '复制失败'));
-          }}
-        />
+        <>
+          <DeskTable
+            items={items}
+            loading={loading}
+            onOpen={openDrawer}
+            onQuick={quickLog}
+            onDial={handleDial}
+          />
+          <DeskCardList
+            items={items}
+            loading={loading}
+            onOpen={openDrawer}
+            onQuick={quickLog}
+            onDial={handleDial}
+          />
+        </>
       )}
-      <footer className="flex items-center justify-between border-t border-[var(--card-border)] px-6 py-2.5 text-[12.5px] text-[color:var(--muted-foreground)]">
+      <footer className="mt-auto flex items-center justify-between border-t border-[var(--card-border)] bg-[var(--card)] px-4 pb-[calc(0.625rem+env(safe-area-inset-bottom))] pt-2.5 text-[12.5px] text-[color:var(--muted-foreground)] md:px-6 md:py-2.5">
         <span className="tnum">
           共 {total} 位{total > 0 && ` · 第 ${from}–${to} 位`}
         </span>
@@ -273,12 +307,24 @@ export function DeskPage({
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onQuick={quickLog}
+        onDial={handleDial}
         sync={syncStatus}
         onToast={onToast}
         onChanged={() => setReloadKey((k) => k + 1)}
         refreshSignal={drawerTick}
       />
-      <CallToasts pending={pendingView} onUndo={undo} onReason={setReason} onHover={handleHover} />
+      <CallToasts
+        pending={pendingView}
+        dialPrompt={dialPrompt}
+        onDialResult={(c, o) => {
+          setDialPrompt(null);
+          quickLog(c, o);
+        }}
+        onDismissDialPrompt={() => setDialPrompt(null)}
+        onUndo={undo}
+        onReason={setReason}
+        onHover={handleHover}
+      />
     </div>
   );
 }

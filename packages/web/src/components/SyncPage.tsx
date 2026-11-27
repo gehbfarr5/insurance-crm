@@ -431,7 +431,7 @@ export function SyncPage({
   onChanged: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-5xl space-y-5 px-6 py-6">
+    <div className="mx-auto max-w-5xl space-y-5 px-3.5 py-4 md:px-6 md:py-6">
       <JobsSection onToast={onToast} onChanged={onChanged} />
       <ContactsSection sync={sync} onToast={onToast} />
       <RemindersSection sync={sync} onToast={onToast} />
