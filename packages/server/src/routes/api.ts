@@ -5,11 +5,17 @@ import {
   ResolveConflictInputSchema,
   UpdateCustomerInputSchema,
   UpsertFollowupInputSchema,
+  WriteGuardHaltedError,
   formatMuseReminderPayload,
 } from '@insurance-crm/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { queryDesk } from '../services/desk.js';
+import {
+  type GoogleSyncService,
+  GoogleWriteLockedError,
+  GoogleWriteUnknownError,
+} from '../services/google-sync.js';
 import { IcloudWriteLockedError, type IcloudSyncService } from '../services/icloud-sync.js';
 import type { KjgxWritebackService } from '../services/kjgx-worker-api.js';
 import type { RemindersSyncService } from '../services/reminders-sync.js';
@@ -52,8 +58,11 @@ export function resolveActorFromRequest(
 }
 
 function handleRouteError(err: unknown, reply: FastifyReply) {
-  if (err instanceof IcloudWriteLockedError) {
+  if (err instanceof IcloudWriteLockedError || err instanceof GoogleWriteLockedError) {
     return reply.code(403).send({ error: err.code, message: err.message });
+  }
+  if (err instanceof WriteGuardHaltedError || err instanceof GoogleWriteUnknownError) {
+    return reply.code(503).send({ error: err.code, message: err.message });
   }
   if (err instanceof ConflictError) {
     return reply.code(409).send({ error: err.code, message: err.message, latest: err.latest });
@@ -73,12 +82,13 @@ export function registerApiRoutes(
     store: CrmStore;
     icloudSync: IcloudSyncService;
     remindersSync: RemindersSyncService;
+    googleSync: GoogleSyncService;
     kjgxService: KjgxWritebackService;
     authMode: 'bearer' | 'dev';
     keyMap: Map<string, string>;
   },
 ) {
-  const { store, icloudSync, remindersSync, kjgxService, authMode, keyMap } = deps;
+  const { store, icloudSync, remindersSync, googleSync, kjgxService, authMode, keyMap } = deps;
 
   const autoPushFollowup = async (
     followup: Awaited<ReturnType<CrmStore['upsertFollowup']>>,
@@ -636,6 +646,89 @@ export function registerApiRoutes(
     v1.post('/sync/reminders/sync', async (req, reply) => {
       try {
         return await remindersSync.syncAll(actorOf(req));
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    // ==================== Google Workspace Dual-Track Routes ====================
+    v1.get('/google/status', async () => googleSync.getStatus());
+
+    v1.get('/google/contacts/preview', async (req, reply) => {
+      try {
+        const q = req.query as Record<string, string | undefined>;
+        return await googleSync.previewContactsSync({
+          customerId: q.customer_id,
+          query: q.query,
+          limit: q.limit ? Number(q.limit) : undefined,
+        });
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.post('/google/contacts/sync', async (req, reply) => {
+      try {
+        const body = z
+          .object({
+            customer_id: z.string(),
+            create_missing: z.boolean().optional(),
+          })
+          .parse(req.body);
+        return await googleSync.syncContactToGoogle(body.customer_id, actorOf(req), {
+          createMissing: body.create_missing,
+        });
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.get('/google/calendar/events', async (req, reply) => {
+      try {
+        const q = req.query as Record<string, string | undefined>;
+        return await googleSync.listCalendarEvents({
+          calendarTarget: q.calendar === 'birthday' ? 'birthday' : 'work',
+          calendarId: q.calendar_id,
+          timeMin: q.time_min,
+          timeMax: q.time_max,
+          query: q.query,
+          maxResults: q.limit ? Number(q.limit) : undefined,
+        });
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.post('/google/calendar/events', async (req, reply) => {
+      try {
+        return await googleSync.upsertCalendarEvent(req.body as never, actorOf(req));
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.post('/google/tasks/sync', async (req, reply) => {
+      try {
+        return await googleSync.syncFollowupsToGoogleTasks(actorOf(req));
+      } catch (err) {
+        return handleRouteError(err, reply);
+      }
+    });
+
+    v1.post('/google/guard/reconcile', async (req, reply) => {
+      try {
+        const body = z
+          .object({
+            channel: z.enum(['contacts', 'calendar', 'tasks']),
+            first_read_applied: z.boolean(),
+            second_read_applied: z.boolean(),
+          })
+          .parse(req.body);
+        return googleSync.reconcileWriteGuard(
+          body.channel,
+          body.first_read_applied,
+          body.second_read_applied,
+        );
       } catch (err) {
         return handleRouteError(err, reply);
       }

@@ -2,6 +2,16 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/) 语义化版本规范，每次正式上线或结构性迭代均更新本文件并打 Git Annotated Tag（`vX.Y.Z`）。
 
+## [1.3.0] - 2026-11-28
+
+正式上线 **v1.4 统一写入引擎** 与 **Google 套件官方 API 双线同步后端（Contacts People API + Calendar API v3 + Tasks API v1）**，将 `/crm-mcp` 工具集扩展至 22 项，并与既有 iCloud 通道独立开关并行。
+
+### Added
+- **v1.4 统一写入与风控引擎（`packages/shared/src/v14-sync-rules.ts`）**：代码化固化联系人 v1.4 精简备注模板（含 `身份证号`、不含保单/CRM 内部字段、原生 `客户` 组、三项读回核对）、日历 6 业务 Emoji 与平台会/一对一/生日模板、锁屏标题敏感明文硬拦截、会前 2h / 会后 18:00 伴生提醒生成，以及 `V14WriteGuard`（UNKNOWN 停写与两次读回对账状态机）。
+- **Google 套件官方 API 双线服务（`packages/server/src/services/google-sync.ts`）**：零外部依赖接入 Google People API v1、Calendar API v3（`工作` & `生日 🎉`）与 Tasks API v1（四列表路由，严格遵守“用户删除的提醒绝不重建”与 `If-Match` ETag 防覆盖），由独立写开关控制，与现有 iCloud 并行互不干扰。
+- **6 项全新 Google & v1.4 MCP 工具（`/crm-mcp` 共 22 项）及 REST 端点（`/api/v1/google/*`）**：`crm_google_status`、`crm_google_contacts_preview`、`crm_google_contacts_sync`、`crm_google_calendar_list`、`crm_google_calendar_upsert_event`、`crm_google_tasks_sync`。
+- **数据库幂等约束迁移（`drizzle/0001_google_dual_track_links.sql`）与 OAuth 一次性授权脚本（`scripts/google-oauth-setup.mjs`）**：放宽 `external_links` / `sync_conflicts` 约束以承接 Google 链路映射，并提供本机一键 OAuth 授权探活脚本。
+
 ## [1.2.2] - 2026-11-28
 
 补齐多 Agent Streamable HTTP MCP（`/crm-mcp`）协议兼容性与完整档案明文身份证读取，并依据用户确认的 v1.4 统一写入规范移除旧隐私墙约束、确立 Google 套件双线同步蓝图。

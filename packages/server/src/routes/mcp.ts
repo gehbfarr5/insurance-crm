@@ -5,9 +5,15 @@ import {
   ResolveConflictInputSchema,
   UpdateCustomerInputSchema,
   UpsertFollowupInputSchema,
+  WriteGuardHaltedError,
 } from '@insurance-crm/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import {
+  type GoogleSyncService,
+  GoogleWriteLockedError,
+  GoogleWriteUnknownError,
+} from '../services/google-sync.js';
 import { IcloudWriteLockedError, type IcloudSyncService } from '../services/icloud-sync.js';
 import type { KjgxWritebackService } from '../services/kjgx-worker-api.js';
 import type { RemindersSyncService } from '../services/reminders-sync.js';
@@ -246,6 +252,96 @@ export const CRM_MCP_TOOLS: McpToolDef[] = [
       },
     },
   },
+  // Google Workspace Official API Dual-Track + v1.4 Writing Engine (6)
+  {
+    name: 'crm_google_status',
+    description:
+      'Check Google Workspace dual-track readiness: OAuth config, write gates, UNKNOWN stop-write guard, target calendars (工作 / 生日 🎉), 客户 contact group, and 4 Google Tasks lists.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'crm_google_contacts_preview',
+    description:
+      'Preview v1.4 Contact Note (with plaintext id_no, zero policy/CRM fields, native 客户 group) and phone-first match status against Google Contacts without writing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        customer_id: { type: 'string' },
+        query: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+      },
+    },
+  },
+  {
+    name: 'crm_google_contacts_sync',
+    description:
+      'Sync a CRM customer to Google Contacts (客户 group, v1.4 note including id_no, phone-first dedup, ETag lock, mandatory 3-field readback).',
+    inputSchema: {
+      type: 'object',
+      required: ['customer_id'],
+      properties: {
+        customer_id: { type: 'string' },
+        create_missing: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'crm_google_calendar_list',
+    description: 'List events from Google 工作 or 生日 🎉 calendar by date range or query.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        calendar: { type: 'string', enum: ['work', 'birthday'] },
+        calendar_id: { type: 'string' },
+        time_min: { type: 'string' },
+        time_max: { type: 'string' },
+        query: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 250 },
+      },
+    },
+  },
+  {
+    name: 'crm_google_calendar_upsert_event',
+    description:
+      'Create or update a v1.4 platform event (✅ 👥), 1-on-1 client visit, or birthday in Google Calendar with lockscreen title safety check, explicit +08:00 timezone, ETag guard, readback, and optional companion reminders.',
+    inputSchema: {
+      type: 'object',
+      required: ['mode'],
+      properties: {
+        mode: { type: 'string', enum: ['platform_event', 'one_on_one', 'birthday'] },
+        event_id: { type: 'string' },
+        expected_etag: { type: 'string' },
+        cancelled: { type: 'boolean' },
+        start_iso: { type: 'string' },
+        end_iso: { type: 'string' },
+        location: { type: 'string' },
+        activity_name: { type: 'string' },
+        entry_requirement: { type: 'string' },
+        attendees: { type: 'array', items: { type: 'object' } },
+        business_type: {
+          type: 'string',
+          enum: ['platform_event', 'first_visit', 'needs_proposal', 'signing', 'policy_service', 'relationship'],
+        },
+        summary_text: { type: 'string' },
+        customer_id: { type: 'string' },
+        customer_name: { type: 'string' },
+        customer_phone: { type: 'string' },
+        colleague_name: { type: 'string' },
+        purpose: { type: 'string' },
+        next_steps: { type: 'array', items: { type: 'string' } },
+        log_date: { type: 'string' },
+        log_fact: { type: 'string' },
+        solar_birthday_date: { type: 'string' },
+        create_companion_reminders: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'crm_google_tasks_sync',
+    description:
+      'Bidirectional sync between CRM followups and Google Tasks v1.0 four lists (工作待办 Work etc.), pulling completions and strictly never recreating user-deleted reminders.',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 const JsonRpcSchema = z.object({
@@ -261,12 +357,13 @@ export function registerMcpRoute(
     store: CrmStore;
     icloudSync: IcloudSyncService;
     remindersSync: RemindersSyncService;
+    googleSync: GoogleSyncService;
     kjgxService: KjgxWritebackService;
     authMode: 'bearer' | 'dev';
     keyMap: Map<string, string>;
   },
 ) {
-  const { store, icloudSync, remindersSync, kjgxService, authMode, keyMap } = deps;
+  const { store, icloudSync, remindersSync, googleSync, kjgxService, authMode, keyMap } = deps;
 
   app.get('/crm-mcp', async (req, reply) => {
     const actor = resolveActorFromRequest(req, authMode, keyMap);
@@ -311,7 +408,7 @@ export function registerMcpRoute(
         result: {
           protocolVersion: '2025-03-26',
           capabilities: { tools: {} },
-          serverInfo: { name: 'insurance-crm-mcp', version: '1.2.2' },
+          serverInfo: { name: 'insurance-crm-mcp', version: '1.3.0' },
         },
       };
     }
@@ -470,6 +567,69 @@ export function registerMcpRoute(
           case 'crm_kjgx_enqueue_writeback':
             data = await kjgxService.enqueue(EnqueueKjgxJobInputSchema.parse(args), actor);
             break;
+          case 'crm_google_status':
+            data = await googleSync.getStatus();
+            break;
+          case 'crm_google_contacts_preview':
+            data = await googleSync.previewContactsSync({
+              customerId: typeof args.customer_id === 'string' ? args.customer_id : undefined,
+              query: typeof args.query === 'string' ? args.query : undefined,
+              limit: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+            break;
+          case 'crm_google_contacts_sync':
+            data = await googleSync.syncContactToGoogle(String(args.customer_id ?? ''), actor, {
+              createMissing: typeof args.create_missing === 'boolean' ? args.create_missing : undefined,
+            });
+            break;
+          case 'crm_google_calendar_list':
+            data = await googleSync.listCalendarEvents({
+              calendarTarget: args.calendar === 'birthday' ? 'birthday' : 'work',
+              calendarId: typeof args.calendar_id === 'string' ? args.calendar_id : undefined,
+              timeMin: typeof args.time_min === 'string' ? args.time_min : undefined,
+              timeMax: typeof args.time_max === 'string' ? args.time_max : undefined,
+              query: typeof args.query === 'string' ? args.query : undefined,
+              maxResults: typeof args.limit === 'number' ? args.limit : undefined,
+            });
+            break;
+          case 'crm_google_calendar_upsert_event':
+            data = await googleSync.upsertCalendarEvent(
+              {
+                mode: (args.mode as 'platform_event' | 'one_on_one' | 'birthday') ?? 'platform_event',
+                eventId: typeof args.event_id === 'string' ? args.event_id : undefined,
+                expectedEtag: typeof args.expected_etag === 'string' ? args.expected_etag : undefined,
+                cancelled: typeof args.cancelled === 'boolean' ? args.cancelled : undefined,
+                startIso: typeof args.start_iso === 'string' ? args.start_iso : undefined,
+                endIso: typeof args.end_iso === 'string' ? args.end_iso : undefined,
+                location: typeof args.location === 'string' ? args.location : undefined,
+                activityName: typeof args.activity_name === 'string' ? args.activity_name : undefined,
+                entryRequirement: typeof args.entry_requirement === 'string' ? args.entry_requirement : undefined,
+                attendees: Array.isArray(args.attendees) ? (args.attendees as never) : undefined,
+                businessType: typeof args.business_type === 'string' ? (args.business_type as never) : undefined,
+                summaryText: typeof args.summary_text === 'string' ? args.summary_text : undefined,
+                customerId: typeof args.customer_id === 'string' ? args.customer_id : undefined,
+                customerName: typeof args.customer_name === 'string' ? args.customer_name : undefined,
+                customerPhone: typeof args.customer_phone === 'string' ? args.customer_phone : undefined,
+                colleagueName: typeof args.colleague_name === 'string' ? args.colleague_name : undefined,
+                purpose: typeof args.purpose === 'string' ? args.purpose : undefined,
+                nextSteps: Array.isArray(args.next_steps)
+                  ? args.next_steps.filter((x): x is string => typeof x === 'string')
+                  : undefined,
+                logDate: typeof args.log_date === 'string' ? args.log_date : undefined,
+                logFact: typeof args.log_fact === 'string' ? args.log_fact : undefined,
+                solarBirthdayDate:
+                  typeof args.solar_birthday_date === 'string' ? args.solar_birthday_date : undefined,
+                createCompanionReminders:
+                  typeof args.create_companion_reminders === 'boolean'
+                    ? args.create_companion_reminders
+                    : undefined,
+              },
+              actor,
+            );
+            break;
+          case 'crm_google_tasks_sync':
+            data = await googleSync.syncFollowupsToGoogleTasks(actor);
+            break;
           default:
             return {
               jsonrpc: '2.0',
@@ -490,11 +650,17 @@ export function registerMcpRoute(
         const code =
           err instanceof IcloudWriteLockedError
             ? 'ICLOUD_WRITE_LOCKED'
-            : err instanceof ConflictError
-              ? 'CONFLICT'
-              : err instanceof NotFoundError
-                ? 'NOT_FOUND'
-                : 'INVALID_INPUT';
+            : err instanceof GoogleWriteLockedError
+              ? 'GOOGLE_WRITE_LOCKED'
+              : err instanceof WriteGuardHaltedError
+                ? 'WRITE_GUARD_UNKNOWN_HALTED'
+                : err instanceof GoogleWriteUnknownError
+                  ? 'GOOGLE_WRITE_UNKNOWN'
+                  : err instanceof ConflictError
+                    ? 'CONFLICT'
+                    : err instanceof NotFoundError
+                      ? 'NOT_FOUND'
+                      : 'INVALID_INPUT';
         return {
           jsonrpc: '2.0',
           id,

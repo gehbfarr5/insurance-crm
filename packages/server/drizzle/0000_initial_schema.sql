@@ -206,7 +206,7 @@ CREATE TRIGGER trg_campaign_members_updated_at
 CREATE TABLE IF NOT EXISTS external_links (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id         UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-  system              TEXT NOT NULL CHECK (system IN ('icloud_contact', 'kjgx_app', 'legacy_macserver')),
+  system              TEXT NOT NULL CHECK (system IN ('icloud_contact', 'kjgx_app', 'legacy_macserver', 'google_contact', 'google_calendar_event', 'google_task')),
   external_id         TEXT NOT NULL,
   secondary_key       TEXT,
   remote_etag         TEXT,
@@ -269,7 +269,7 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   entity_type    TEXT NOT NULL CHECK (entity_type IN ('customer', 'followup')),
   entity_id      UUID NOT NULL,
-  source_system  TEXT NOT NULL CHECK (source_system IN ('icloud_contact', 'icloud_reminder', 'kjgx_app')),
+  source_system  TEXT NOT NULL CHECK (source_system IN ('icloud_contact', 'icloud_reminder', 'kjgx_app', 'google_contact', 'google_calendar', 'google_task')),
   field_name     TEXT NOT NULL,
   base_value     JSONB,
   crm_value      JSONB,

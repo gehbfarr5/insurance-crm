@@ -1,7 +1,7 @@
 # Insurance Advisor CRM (`insurance-crm`)
 
 > **所属体系**：[保险规划师自主工作系统 (`insurance-autonomous-work-system`)](https://github.com/gehbfarr5/insurance-autonomous-work-system) —— **领域 A（客户经营）** 个人自建客户库与多端外呼中枢。  
-> **当前版本**：`v1.2.2`（详见 [CHANGELOG.md](./CHANGELOG.md)）
+> **当前版本**：`v1.3.0`（详见 [CHANGELOG.md](./CHANGELOG.md)）
 
 兼容**多端（Mac / Windows / iPhone）**、**多 AI Agent（Streamable HTTP MCP）**、**iPhone 原生通讯录 & 提醒事项双向同步（复用 MUSE 路由规范）**，以及**太保科技个险单账号核验与回写优先流水线**的自建保险客户管理中枢。
 
@@ -26,7 +26,7 @@
    - 顶部状态胶囊支持实时查看科技个险连接状态并在需要时完成图形/短信验证码登录核验。
    - 修改资料或登记拜访后生成 `field_diff` 预览；人工批准后由串行执行器认领，内置 **L0 OTA Bundle Hash 熔断门禁**与**写后强制回读核验**。
 5. **多 Agent Streamable HTTP MCP（`/crm-mcp`）**
-   - 按每个 Agent 独立 Bearer Access Key 识别身份并记录 `audit_logs`，暴露 16 个高阶业务工具，写入强制校验 `expected_version` 乐观锁。
+   - 按每个 Agent 独立 Bearer Access Key 识别身份并记录 `audit_logs`，暴露 22 个高阶业务与双线同步工具（16 项核心 CRM/iCloud/KJGX 工具 + 6 项 Google Workspace v1.4 工具），写入强制校验 `expected_version` / `expected_etag` 与 UNKNOWN 停写护栏。
 
 ---
 

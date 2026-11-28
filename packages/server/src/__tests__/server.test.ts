@@ -30,7 +30,7 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('exposes exact 16 tools on /crm-mcp tools/list and records Agent identity', async () => {
+  it('exposes exact 22 tools on /crm-mcp tools/list and records Agent identity', async () => {
     const listRes = await handle.app.inject({
       method: 'POST',
       url: '/crm-mcp',
@@ -39,7 +39,7 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
     });
     expect(listRes.statusCode).toBe(200);
     const body = listRes.json() as { result: { tools: Array<{ name: string }> } };
-    expect(body.result.tools).toHaveLength(16);
+    expect(body.result.tools).toHaveLength(22);
 
     const searchRes = await handle.app.inject({
       method: 'POST',

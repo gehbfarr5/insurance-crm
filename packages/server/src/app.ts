@@ -9,6 +9,7 @@ import { createDbClient } from './db/client.js';
 import { registerApiRoutes } from './routes/api.js';
 import { registerMcpRoute } from './routes/mcp.js';
 import { type CardDavTransport, DirectIcloudCardDavClient } from './services/carddav-client.js';
+import { type GoogleSyncOptions, GoogleSyncService } from './services/google-sync.js';
 import {
   HttpIcloudMcpTransport,
   type IcloudMcpTransport,
@@ -33,6 +34,7 @@ export interface BuildAppOptions {
   remindersBridgeToken?: string;
   remindersFetch?: typeof fetch;
   remindersAutoSyncIntervalSec?: number;
+  googleSync?: GoogleSyncOptions;
   vault?: IdVault;
   logger?: boolean;
 }
@@ -74,6 +76,19 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<{
       throw new Error('DATABASE_URL is required when CRM_STORAGE=postgres');
     }
     const { pool, db } = createDbClient(connStr);
+    // Idempotent dual-track CHECK constraint migration for Google Workspace links/conflicts
+    await pool
+      .query(
+        `ALTER TABLE external_links DROP CONSTRAINT IF EXISTS external_links_system_check;
+         ALTER TABLE external_links ADD CONSTRAINT external_links_system_check
+           CHECK (system IN ('icloud_contact', 'kjgx_app', 'legacy_macserver', 'google_contact', 'google_calendar_event', 'google_task'));
+         ALTER TABLE sync_conflicts DROP CONSTRAINT IF EXISTS sync_conflicts_source_system_check;
+         ALTER TABLE sync_conflicts ADD CONSTRAINT sync_conflicts_source_system_check
+           CHECK (source_system IN ('icloud_contact', 'icloud_reminder', 'kjgx_app', 'google_contact', 'google_calendar', 'google_task'));`,
+      )
+      .catch(() => {
+        // Ignore if tables do not exist yet in isolated test harness
+      });
     store = new PostgresStore(db, vault);
     pgPoolEnd = () => pool.end();
   } else {
@@ -121,14 +136,31 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<{
   if (Number.isFinite(autoSyncSec) && autoSyncSec >= 30) {
     remindersSync.startAutoSync(Math.trunc(autoSyncSec));
   }
+  const googleSync = new GoogleSyncService(store, {
+    clientId: opts.googleSync?.clientId ?? process.env.GOOGLE_CLIENT_ID,
+    clientSecret: opts.googleSync?.clientSecret ?? process.env.GOOGLE_CLIENT_SECRET,
+    refreshToken: opts.googleSync?.refreshToken ?? process.env.GOOGLE_REFRESH_TOKEN,
+    enabled: opts.googleSync?.enabled ?? process.env.GOOGLE_SYNC_ENABLED === 'true',
+    contactsWriteEnabled:
+      opts.googleSync?.contactsWriteEnabled ?? process.env.GOOGLE_CONTACTS_WRITE_ENABLED === 'true',
+    calendarWriteEnabled:
+      opts.googleSync?.calendarWriteEnabled ?? process.env.GOOGLE_CALENDAR_WRITE_ENABLED === 'true',
+    tasksWriteEnabled:
+      opts.googleSync?.tasksWriteEnabled ?? process.env.GOOGLE_TASKS_WRITE_ENABLED === 'true',
+    workCalendarName: opts.googleSync?.workCalendarName ?? process.env.GOOGLE_WORK_CALENDAR_NAME,
+    birthdayCalendarName: opts.googleSync?.birthdayCalendarName ?? process.env.GOOGLE_BIRTHDAY_CALENDAR_NAME,
+    clientGroupName: opts.googleSync?.clientGroupName ?? process.env.GOOGLE_CLIENT_GROUP_NAME,
+    fetchImpl: opts.googleSync?.fetchImpl,
+  });
+
   const kjgxService = new KjgxWritebackService(store, opts.expectedBundleHash ?? process.env.KJGX_EXPECTED_BUNDLE_HASH ?? '');
   await kjgxService.hydrateFromStore();
 
   const app = Fastify({ logger: opts.logger ?? false });
   await app.register(cors, { origin: true });
 
-  registerApiRoutes(app, { store, icloudSync, remindersSync, kjgxService, authMode, keyMap });
-  registerMcpRoute(app, { store, icloudSync, remindersSync, kjgxService, authMode, keyMap });
+  registerApiRoutes(app, { store, icloudSync, remindersSync, googleSync, kjgxService, authMode, keyMap });
+  registerMcpRoute(app, { store, icloudSync, remindersSync, googleSync, kjgxService, authMode, keyMap });
 
   // Serve built React PWA when present
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
