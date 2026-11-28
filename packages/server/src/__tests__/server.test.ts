@@ -415,4 +415,72 @@ describe('Insurance CRM Server REST + 16-Tool MCP + KJGX + iCloud Sync', () => {
       await wkHandle.close();
     }
   });
+
+  it('supports Streamable HTTP MCP GET/DELETE/ping/notifications and decrypted id_no in crm_get_customer_360', async () => {
+    const unauthGet = await handle.app.inject({ method: 'GET', url: '/crm-mcp' });
+    expect(unauthGet.statusCode).toBe(401);
+
+    const authGet = await handle.app.inject({
+      method: 'GET',
+      url: '/crm-mcp',
+      headers: { authorization: 'Bearer test-agy-key' },
+    });
+    expect(authGet.statusCode).toBe(405);
+    expect(authGet.headers.allow).toBe('POST, DELETE');
+
+    const authDel = await handle.app.inject({
+      method: 'DELETE',
+      url: '/crm-mcp',
+      headers: { authorization: 'Bearer test-agy-key' },
+    });
+    expect(authDel.statusCode).toBe(204);
+
+    const pingRes = await handle.app.inject({
+      method: 'POST',
+      url: '/crm-mcp',
+      headers: { authorization: 'Bearer test-agy-key' },
+      payload: { jsonrpc: '2.0', id: 7, method: 'ping' },
+    });
+    expect(pingRes.statusCode).toBe(200);
+    expect(pingRes.json()).toEqual({ jsonrpc: '2.0', id: 7, result: {} });
+
+    const notifRes = await handle.app.inject({
+      method: 'POST',
+      url: '/crm-mcp',
+      headers: { authorization: 'Bearer test-agy-key' },
+      payload: { jsonrpc: '2.0', method: 'notifications/initialized' },
+    });
+    expect(notifRes.statusCode).toBe(202);
+
+    const createRes = await handle.app.inject({
+      method: 'POST',
+      url: '/api/v1/customers',
+      headers: { authorization: 'Bearer test-web-key' },
+      payload: {
+        name: '明文身份证测试客户',
+        primary_phone: '13900008899',
+        id_no: '520102199001011234',
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const createdId = createRes.json().id as string;
+
+    const get360Res = await handle.app.inject({
+      method: 'POST',
+      url: '/crm-mcp',
+      headers: { authorization: 'Bearer test-muse-key' },
+      payload: {
+        jsonrpc: '2.0',
+        id: 8,
+        method: 'tools/call',
+        params: { name: 'crm_get_customer_360', arguments: { customer_id: createdId } },
+      },
+    });
+    expect(get360Res.statusCode).toBe(200);
+    const detail = JSON.parse(get360Res.json().result.content[0].text) as {
+      customer: { id_no: string | null; name: string };
+    };
+    expect(detail.customer.name).toBe('明文身份证测试客户');
+    expect(detail.customer.id_no).toBe('520102199001011234');
+  });
 });

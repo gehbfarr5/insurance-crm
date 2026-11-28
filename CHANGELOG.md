@@ -2,6 +2,15 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/) 语义化版本规范，每次正式上线或结构性迭代均更新本文件并打 Git Annotated Tag（`vX.Y.Z`）。
 
+## [1.2.2] - 2026-11-28
+
+补齐多 Agent Streamable HTTP MCP（`/crm-mcp`）协议兼容性与完整档案明文身份证读取，并依据用户确认的 v1.4 统一写入规范移除旧隐私墙约束、确立 Google 套件双线同步蓝图。
+
+### Changed
+- **Streamable HTTP MCP 完整协议兼容（`packages/server/src/routes/mcp.ts`）**：新增 `GET /crm-mcp -> 405`（附 `Allow: POST, DELETE`）、`DELETE /crm-mcp -> 204`、`ping -> {}` 与通用 `notifications/* -> 202`，确保 Antigravity（T3 Code）、MUSE 等标准 MCP 客户端稳定连接。
+- **`crm_get_customer_360` 补齐受控明文 `id_no` 返回（`packages/server/src/routes/mcp.ts`）**：与 REST `GET /api/v1/customers/:id` 保持一致，经独立 Agent Bearer Key 鉴权后直接返回完整身份证号，彻底消除人工「复制完整信息卡」中转。
+- **同步与写入规范对齐 v1.4 与 Google 套件双线方向（`docs/muse-sync-contract.md` / `README.md`）**：移除历史旧文档中的隐私隔离墙表述，正式固化联系人备注含身份证号（不含保单与 CRM 内部字段）、`客户` 原生分组、日历双模板与 Emoji 规范、提醒四列表路由与伴生提醒、以及 UNKNOWN 停写对账铁律。
+
 ## [1.2.1] - 2026-11-28
 
 优化移动端客户详情抽屉顶部操作按钮排布，消除按钮孤立折行。

@@ -1,7 +1,7 @@
 # Insurance Advisor CRM (`insurance-crm`)
 
 > **所属体系**：[保险规划师自主工作系统 (`insurance-autonomous-work-system`)](https://github.com/gehbfarr5/insurance-autonomous-work-system) —— **领域 A（客户经营）** 个人自建客户库与多端外呼中枢。  
-> **当前版本**：`v1.0.0`（详见 [CHANGELOG.md](./CHANGELOG.md)）
+> **当前版本**：`v1.2.2`（详见 [CHANGELOG.md](./CHANGELOG.md)）
 
 兼容**多端（Mac / Windows / iPhone）**、**多 AI Agent（Streamable HTTP MCP）**、**iPhone 原生通讯录 & 提醒事项双向同步（复用 MUSE 路由规范）**，以及**太保科技个险单账号核验与回写优先流水线**的自建保险客户管理中枢。
 
@@ -18,10 +18,10 @@
    - 主界面聚焦 **「筛客外呼」** 与 **「同步与回写」** 两个高频视图，支持性别、年龄、保费、地址、外呼防重呼多维筛选与排序。
    - 桌面端采用紧凑数据表与右侧详情抽屉；移动端（`< 768px`）切换为大触控卡片列表与底部抽屉（`bottom-sheet`）。
    - 支持 `tel:` 一键直拨与挂断返回速记提示、一键复制完整 MUSE 信息卡；所有快捷外呼标记及客户/沟通记录删除均采用**底部居中 Top-Layer 5 秒「撤销」Toast**，不弹窗二次打断。
-3. **复用既有 MUSE Agent 同步规范**（详见 [docs/muse-sync-contract.md](./docs/muse-sync-contract.md)）
-   - **Reminders 路由 v1.0**：支持 `收集箱 Inbox` / `工作待办 Work` / `个人生活 Personal` / `日常采购 Shopping` 四类列表自动路由（CRM 跟进默认写入 `工作待办 Work`）。
-   - **CardDAV 原生分组 & 幂等备注**：强制使用 iCloud 原生分组与 `[#FUP:<id>] YYYY-MM-DD | <kind> | <status>` 标记块，保留用户手写备注不被覆盖。
-   - **3-Way Diff 防覆盖 + 隐私隔离墙**：基于 `BASE` 快照与 `expected_etag` 做三方比对，并发修改写入冲突队列人工仲裁；严禁将身份证、保费、保单明细写入 iCloud。
+3. **复用统一写入规范与外部套件双线同步**（详见 [docs/muse-sync-contract.md](./docs/muse-sync-contract.md)）
+   - **四件套统一规范（v1.4）**：联系人备注按「基础信息（含身份证号）+ 空行 + `[YYYY-MM-DD]` 时间记录」排版、不写入保单/保费及 CRM 内部字段、原生归入 `客户` 组；日历沿用固定 Emoji 与平台会/一对一双模板；提醒沿用 `收集箱 Inbox` / `工作待办 Work` / `个人生活 Personal` / `日常采购 Shopping` 四列表路由与伴生提醒规则；长笔记原生沉淀在 CRM。
+   - **防覆盖与对账铁律**：基于 `BASE` 快照与 `expected_etag` 做三方比对，并发修改写入冲突队列人工仲裁；写后三项核对，遇 `UNKNOWN` 全局停写先对账再处理。
+   - **双线演进**：过渡期保留既有 iCloud 同步通道不中断，后续并行引入 **Google 套件官方 API（Contacts / Calendar / Tasks）** 实现跨端稳态同步。
 4. **科技个险单账号核验与回写优先队列（Writeback-First）**
    - 顶部状态胶囊支持实时查看科技个险连接状态并在需要时完成图形/短信验证码登录核验。
    - 修改资料或登记拜访后生成 `field_diff` 预览；人工批准后由串行执行器认领，内置 **L0 OTA Bundle Hash 熔断门禁**与**写后强制回读核验**。

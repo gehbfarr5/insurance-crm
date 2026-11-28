@@ -268,6 +268,25 @@ export function registerMcpRoute(
 ) {
   const { store, icloudSync, remindersSync, kjgxService, authMode, keyMap } = deps;
 
+  app.get('/crm-mcp', async (req, reply) => {
+    const actor = resolveActorFromRequest(req, authMode, keyMap);
+    if (!actor) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Valid Agent Bearer Key required' });
+    }
+    return reply.header('Allow', 'POST, DELETE').code(405).send({
+      error: 'METHOD_NOT_ALLOWED',
+      message: 'This Streamable HTTP MCP server uses POST JSON-RPC only (no SSE GET stream).',
+    });
+  });
+
+  app.delete('/crm-mcp', async (req, reply) => {
+    const actor = resolveActorFromRequest(req, authMode, keyMap);
+    if (!actor) {
+      return reply.code(401).send({ error: 'UNAUTHORIZED', message: 'Valid Agent Bearer Key required' });
+    }
+    return reply.code(204).send();
+  });
+
   app.post('/crm-mcp', async (req, reply) => {
     const actor = resolveActorFromRequest(req, authMode, keyMap);
     if (!actor) {
@@ -292,12 +311,20 @@ export function registerMcpRoute(
         result: {
           protocolVersion: '2025-03-26',
           capabilities: { tools: {} },
-          serverInfo: { name: 'insurance-crm-mcp', version: '0.1.0' },
+          serverInfo: { name: 'insurance-crm-mcp', version: '1.2.2' },
         },
       };
     }
 
-    if (method === 'notifications/initialized') {
+    if (method === 'ping') {
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {},
+      };
+    }
+
+    if (method.startsWith('notifications/')) {
       return reply.code(202).send();
     }
 
@@ -319,9 +346,16 @@ export function registerMcpRoute(
           case 'crm_search_customers':
             data = await store.searchCustomers(args as never);
             break;
-          case 'crm_get_customer_360':
-            data = await store.getCustomer360(String(args.customer_id ?? ''));
+          case 'crm_get_customer_360': {
+            const customerId = String(args.customer_id ?? '');
+            const detail = await store.getCustomer360(customerId);
+            const idMap = await store.getDecryptedIdMap([customerId]);
+            data = {
+              ...detail,
+              customer: { ...detail.customer, id_no: idMap.get(customerId) ?? null },
+            };
             break;
+          }
           case 'crm_list_campaigns':
             data = await store.listCampaigns();
             break;
