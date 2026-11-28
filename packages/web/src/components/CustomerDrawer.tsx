@@ -282,35 +282,47 @@ export function CustomerDrawer({
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button type="button" onClick={copyCard} disabled={!detail} className={btnPrimary}>
-                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  复制完整信息卡（给 MUSE）
-                </button>
+              <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center">
                 <button
                   type="button"
-                  onClick={writeContacts}
-                  disabled={busy || !contactsEnabled}
-                  title={contactsEnabled ? undefined : '通讯录写入闸门未开启'}
-                  className={btn}
+                  onClick={copyCard}
+                  disabled={!detail}
+                  className={`${btnPrimary} w-full whitespace-nowrap md:w-auto`}
                 >
-                  <Contact className="size-3.5" />
-                  写入通讯录
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  复制完整信息卡
                 </button>
-                <button type="button" onClick={() => setEditOpen(true)} disabled={!c} className={btn}>
-                  <Pencil className="size-3.5" />
-                  编辑
-                </button>
-                {onDeleteCustomer && (
+                <div className="flex items-center gap-1.5 md:contents">
                   <button
                     type="button"
-                    onClick={() => onDeleteCustomer(customer)}
-                    className={`${btn} hover:border-[var(--error-border)] hover:bg-[var(--error-bg)] hover:text-[color:var(--error)]`}
+                    onClick={writeContacts}
+                    disabled={busy || !contactsEnabled}
+                    title={contactsEnabled ? undefined : '通讯录写入闸门未开启'}
+                    className={`${btn} flex-auto whitespace-nowrap md:flex-none`}
                   >
-                    <Trash2 className="size-3.5" />
-                    删除
+                    <Contact className="size-3.5" />
+                    写入通讯录
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => setEditOpen(true)}
+                    disabled={!c}
+                    className={`${btn} flex-auto whitespace-nowrap md:flex-none`}
+                  >
+                    <Pencil className="size-3.5" />
+                    编辑
+                  </button>
+                  {onDeleteCustomer && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteCustomer(customer)}
+                      className={`${btn} flex-auto whitespace-nowrap hover:border-[var(--error-border)] hover:bg-[var(--error-bg)] hover:text-[color:var(--error)] md:flex-none`}
+                    >
+                      <Trash2 className="size-3.5" />
+                      删除
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
