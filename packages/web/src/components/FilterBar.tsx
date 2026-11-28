@@ -151,7 +151,7 @@ export function FilterBar({
               type="button"
               aria-expanded={expanded}
               onClick={() => setExpanded((v) => !v)}
-              className={`${btn} ${expanded || activeChips.length > 0 ? 'border-[var(--foreground)]/30 bg-[var(--surface-subtle)]' : ''}`}
+              className={`${btn} ${expanded || activeChips.length > 0 ? 'border-[var(--primary-soft-border)] bg-[var(--primary-soft-bg)] text-[color:var(--primary-soft-fg)]' : ''}`}
             >
               <SlidersHorizontal className="size-3.5" />
               <span>筛选</span>
@@ -161,7 +161,7 @@ export function FilterBar({
                 </span>
               )}
               <ChevronDown
-                className={`size-3.5 text-[color:var(--muted-foreground)] transition-transform duration-180 ease-[cubic-bezier(0.2,0,0,1)] ${
+                className={`size-3.5 opacity-70 transition-transform duration-180 ease-[cubic-bezier(0.2,0,0,1)] ${
                   expanded ? 'rotate-180' : ''
                 }`}
               />
@@ -185,10 +185,10 @@ export function FilterBar({
                 key={ch.key}
                 type="button"
                 onClick={ch.clear}
-                className="inline-flex h-6 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 text-[13px] text-[color:var(--foreground)] transition-colors duration-120 hover:bg-[var(--hover)]"
+                className="inline-flex h-6 cursor-pointer items-center gap-1 rounded-md border border-[var(--primary-soft-border)] bg-[var(--primary-soft-bg)] px-2 text-[13px] text-[color:var(--primary-soft-fg)] transition-colors duration-120 hover:bg-[var(--primary-soft-hover)]"
               >
                 <span>{ch.label}</span>
-                <X className="size-3 text-[color:var(--muted-foreground)]" />
+                <X className="size-3 opacity-70" />
               </button>
             ))}
           </div>
@@ -368,10 +368,10 @@ export function FilterBar({
                 key={ch.key}
                 type="button"
                 onClick={ch.clear}
-                className="touch-action inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--secondary)] px-2.5 text-[13px] text-[color:var(--foreground)]"
+                className="touch-action inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-[var(--primary-soft-border)] bg-[var(--primary-soft-bg)] px-2.5 text-[13px] text-[color:var(--primary-soft-fg)] transition-colors duration-120 hover:bg-[var(--primary-soft-hover)]"
               >
                 <span>{ch.label}</span>
-                <X className="size-3.5 text-[color:var(--muted-foreground)]" />
+                <X className="size-3.5 opacity-70" />
               </button>
             ))}
             <button

@@ -109,7 +109,7 @@ export function BottomToastHost() {
                         key={r}
                         type="button"
                         onClick={() => chooseToastReason(it.id, r)}
-                        className="touch-action h-7 cursor-pointer rounded-full border border-[var(--card-border)] bg-[var(--secondary)] px-3 text-[13px] text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--foreground)]"
+                        className="touch-action h-7 cursor-pointer rounded-full border border-[var(--btn-border)] bg-[var(--btn-bg)] px-3 text-[13px] text-[color:var(--btn-fg)] transition-colors hover:bg-[var(--btn-hover)] hover:text-[color:var(--foreground)]"
                       >
                         {r}
                       </button>
@@ -120,7 +120,7 @@ export function BottomToastHost() {
                   <button
                     type="button"
                     onClick={() => undoToast(it.id)}
-                    className="touch-action ml-auto inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2.5 text-[13px] font-medium text-[color:var(--foreground)] hover:bg-[var(--secondary)]"
+                    className="touch-action ml-auto inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2.5 text-[13px] font-medium text-[color:var(--primary-soft-fg)] hover:bg-[var(--primary-soft-bg)]"
                   >
                     <Undo2 className="size-3.5" />
                     {it.undoLabel ?? '撤销'}
@@ -134,7 +134,7 @@ export function BottomToastHost() {
                 initial={{ scaleX: 1 }}
                 animate={{ scaleX: it.paused ? 1 : 0 }}
                 transition={{ duration: it.paused ? 0.15 : it.durationMs / 1000, ease: 'linear' }}
-                className={`h-0.5 origin-left bg-[var(--foreground)] ${it.paused ? 'opacity-20' : 'opacity-60'}`}
+                className={`h-0.5 origin-left bg-[var(--primary)] ${it.paused ? 'opacity-20' : 'opacity-60'}`}
               />
             )}
           </motion.div>

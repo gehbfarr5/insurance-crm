@@ -14,9 +14,11 @@ import {
   CHANNEL_LABEL,
   copyText,
   fmtDateTime,
+  fmtLocalDateInput,
   fmtMoney,
   fmtShortDate,
   followupUrgency,
+  localDateInputToIso,
   OUTCOME_LABEL,
   OUTCOME_TONE,
   RAPPORT_LABEL,
@@ -218,7 +220,7 @@ export function CustomerDrawer({
 
   const c = detail?.customer;
   const contactsEnabled = Boolean(sync?.contacts?.contacts_write_enabled);
-  const nextFollowupDateValue = customer?.next_followup_at ? customer.next_followup_at.slice(0, 10) : '';
+  const nextFollowupDateValue = fmtLocalDateInput(customer?.next_followup_at);
   const urgency = followupUrgency(customer?.next_followup_at);
 
   return (
@@ -303,7 +305,7 @@ export function CustomerDrawer({
                   <button
                     type="button"
                     onClick={() => onDeleteCustomer(customer)}
-                    className={`${btn} hover:border-[var(--error)] hover:text-[color:var(--error)]`}
+                    className={`${btn} hover:border-[var(--error-border)] hover:bg-[var(--error-bg)] hover:text-[color:var(--error)]`}
                   >
                     <Trash2 className="size-3.5" />
                     删除
@@ -347,7 +349,7 @@ export function CustomerDrawer({
                       type="date"
                       value={nextFollowupDateValue}
                       onChange={(e) => {
-                        const val = e.target.value ? `${e.target.value}T09:00:00.000Z` : null;
+                        const val = e.target.value ? localDateInputToIso(e.target.value) : null;
                         onUpdateField(
                           customer,
                           { next_followup_at: val },
@@ -402,7 +404,7 @@ export function CustomerDrawer({
                       }
                     }}
                     placeholder="记录沟通要点或客户反馈（Cmd/Ctrl + Enter 提交）"
-                    className="w-full resize-none rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 text-[13px] text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] outline-none transition-[border-color,box-shadow] duration-120 focus-visible:border-[color:var(--foreground)]/45 focus-visible:ring-[3px] focus-visible:ring-[var(--ring)]"
+                    className="w-full resize-none rounded-md border border-[var(--btn-border)] bg-[var(--card)] px-2.5 py-2 text-[13px] text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] outline-none transition-[border-color,box-shadow] duration-120 focus-visible:border-[var(--primary)] focus-visible:ring-[3px] focus-visible:ring-[var(--ring)]"
                   />
                   <div className="flex items-center justify-end">
                     <button type="submit" disabled={busy || !noteText.trim()} className={btnPrimary}>
@@ -422,7 +424,7 @@ export function CustomerDrawer({
                         <a
                           href={`tel:${customer.primary_phone}`}
                           onClick={() => onDial(customer)}
-                          className="tnum inline-flex items-center gap-1.5 text-[color:var(--foreground)] hover:underline"
+                          className="tnum inline-flex items-center gap-1.5 text-[color:var(--foreground)] transition-colors duration-120 hover:text-[color:var(--primary-soft-fg)] hover:underline"
                         >
                           <Phone className="size-3.5 text-[color:var(--muted-foreground)]" aria-hidden="true" />
                           {customer.primary_phone}
@@ -501,7 +503,7 @@ export function CustomerDrawer({
                           <li key={`it-${it.id}`} className="group relative">
                             <span
                               aria-hidden="true"
-                              className="absolute -left-5 top-1.5 size-3.5 rounded-full border-2 border-[var(--surface-elevated)] bg-[var(--foreground)]/70"
+                              className="absolute -left-5 top-1.5 size-3.5 rounded-full border-2 border-[var(--surface-elevated)] bg-[var(--primary)]"
                             />
                             <div className="rounded-lg border border-[var(--card-border)] bg-[var(--card)] px-3.5 py-2.5">
                               <div className="flex items-center justify-between gap-2">

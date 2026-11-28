@@ -32,7 +32,7 @@ export function KjgxCapsule({
     <button
       type="button"
       onClick={onClick}
-      className="touch-icon-hit inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 text-[13px] transition-colors hover:bg-[var(--secondary)] sm:gap-2 sm:px-3"
+      className="touch-icon-hit inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--btn-border)] bg-[var(--btn-bg)] px-2.5 text-[13px] text-[color:var(--btn-fg)] transition-colors hover:bg-[var(--btn-hover)] hover:text-[color:var(--foreground)] sm:gap-2 sm:px-3"
     >
       <motion.span
         aria-hidden="true"
@@ -241,7 +241,7 @@ export function KjgxPanel({
                 type="button"
                 onClick={doLogout}
                 disabled={busy !== ''}
-                className={`${btn} ml-auto hover:border-[var(--error)] hover:text-[color:var(--error)]`}
+                className={`${btn} ml-auto hover:border-[var(--error-border)] hover:bg-[var(--error-bg)] hover:text-[color:var(--error)]`}
               >
                 退出会话
               </button>

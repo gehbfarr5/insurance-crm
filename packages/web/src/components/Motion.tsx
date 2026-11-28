@@ -34,13 +34,13 @@ export function Segmented<T extends string>({
             aria-checked={active}
             onClick={() => onChange(o.value)}
             className={`relative inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[5px] px-2.5 text-[13px] whitespace-nowrap transition-colors duration-120 ease-[cubic-bezier(0.2,0,0,1)] ${
-              active ? 'font-medium text-[color:var(--foreground)]' : 'text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]'
+              active ? 'font-medium text-[color:var(--primary-soft-fg)]' : 'text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]'
             }`}
           >
             {active && (
               <motion.span
                 layoutId={`seg-${id}`}
-                className="absolute inset-0 rounded-[5px] border border-[var(--card-border)] bg-[var(--card)]"
+                className="absolute inset-0 rounded-[5px] border border-[var(--primary-soft-border)] bg-[var(--card)]"
                 transition={{ duration: 0.16, ease: EASE_OUT }}
               />
             )}
@@ -49,7 +49,7 @@ export function Segmented<T extends string>({
               <span
                 className={`tnum relative rounded px-1 text-[13px] leading-4 ${
                   active
-                    ? 'bg-[var(--secondary)] text-[color:var(--foreground)]'
+                    ? 'bg-[var(--primary-soft-bg)] text-[color:var(--primary-soft-fg)]'
                     : 'text-[color:var(--muted-foreground)]'
                 }`}
               >

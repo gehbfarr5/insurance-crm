@@ -138,14 +138,14 @@ export function App() {
               >
                 {n.label}
                 {n.id === 'sync' && pendingCount > 0 && (
-                  <span className="tnum inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--primary)] px-1.5 text-[13px] font-medium text-[color:var(--primary-foreground)]">
+                  <span className="tnum inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-[var(--primary-soft-border)] bg-[var(--primary-soft-bg)] px-1.5 text-[13px] font-medium text-[color:var(--primary-soft-fg)]">
                     {pendingCount}
                   </span>
                 )}
                 {page === n.id && (
                   <motion.span
                     layoutId="nav-underline"
-                    className="absolute inset-x-1.5 bottom-0 h-0.5 bg-[var(--foreground)] md:inset-x-2"
+                    className="absolute inset-x-1.5 bottom-0 h-0.5 bg-[var(--primary)] md:inset-x-2"
                     transition={{ duration: 0.16, ease: EASE_OUT }}
                   />
                 )}
@@ -159,7 +159,7 @@ export function App() {
             type="button"
             onClick={toggle}
             aria-label={scheme === 'dark' ? '切换到浅色' : '切换到深色'}
-            className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--secondary)]"
+            className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-md border border-[var(--btn-border)] bg-[var(--btn-bg)] text-[color:var(--btn-fg)] transition-colors duration-120 hover:bg-[var(--btn-hover)] hover:text-[color:var(--foreground)]"
           >
             {scheme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </button>
@@ -172,7 +172,7 @@ export function App() {
               }}
               aria-label="退出登录"
               title="退出登录"
-              className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-md border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--secondary)]"
+              className="touch-icon-hit grid size-8 cursor-pointer place-items-center rounded-md border border-[var(--btn-border)] bg-[var(--btn-bg)] text-[color:var(--btn-fg)] transition-colors duration-120 hover:bg-[var(--btn-hover)] hover:text-[color:var(--foreground)]"
             >
               <LogOut className="size-4" />
             </button>

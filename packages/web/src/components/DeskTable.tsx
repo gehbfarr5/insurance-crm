@@ -1,6 +1,7 @@
 import { type Customer, type DeskCustomer, RAPPORT_TAGS } from '@insurance-crm/shared';
 import { Phone, Star } from 'lucide-react';
 import {
+  fmtDateTime,
   fmtMoney,
   fmtShortDate,
   followupUrgency,
@@ -26,10 +27,10 @@ function QuickButton({
 }) {
   const cls =
     tone === 'primary'
-      ? 'border-transparent bg-[var(--primary)] text-[color:var(--primary-foreground)] hover:opacity-90'
+      ? 'border-[var(--primary-soft-border)] bg-[var(--primary-soft-bg)] text-[color:var(--primary-soft-fg)] hover:bg-[var(--primary-soft-hover)]'
       : tone === 'danger'
-        ? 'border-[var(--border)] bg-[var(--card)] text-[color:var(--foreground)] hover:border-[var(--error)] hover:text-[color:var(--error)]'
-        : 'border-[var(--border)] bg-[var(--card)] text-[color:var(--foreground)] hover:bg-[var(--hover)]';
+        ? 'border-[var(--btn-border)] bg-[var(--btn-bg)] text-[color:var(--btn-fg)] hover:border-[var(--error-border)] hover:bg-[var(--error-bg)] hover:text-[color:var(--error)]'
+        : 'border-[var(--btn-border)] bg-[var(--btn-bg)] text-[color:var(--btn-fg)] hover:bg-[var(--btn-hover)] hover:text-[color:var(--foreground)]';
   return (
     <button
       type="button"
@@ -62,7 +63,13 @@ export function CallSummary({ c }: { c: DeskCustomer }) {
       </span>
       {c.last_call_at && c.last_call_outcome && (
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-          <span className="tnum text-[13px] text-[color:var(--muted-foreground)]">{relTime(c.last_call_at)}</span>
+          <time
+            dateTime={c.last_call_at}
+            title={fmtDateTime(c.last_call_at)}
+            className="tnum text-[13px] text-[color:var(--muted-foreground)]"
+          >
+            {relTime(c.last_call_at)}
+          </time>
           <span className={badgeCls(OUTCOME_TONE[c.last_call_outcome] ?? 'neutral')}>
             {OUTCOME_LABEL[c.last_call_outcome] ?? c.last_call_outcome}
           </span>
@@ -121,8 +128,8 @@ export function DialLink({
       title="点击直接拨号"
       className={
         compact
-          ? 'tnum inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 font-medium text-[color:var(--foreground)] transition-colors duration-120 hover:bg-[var(--secondary)]'
-          : 'tnum inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--border)] bg-[var(--secondary)] px-3 text-[13px] font-medium text-[color:var(--foreground)] transition-colors duration-120'
+          ? 'tnum inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 font-medium text-[color:var(--foreground)] transition-colors duration-120 hover:bg-[var(--primary-soft-bg)] hover:text-[color:var(--primary-soft-fg)]'
+          : 'tnum inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--btn-border)] bg-[var(--btn-bg)] px-3 text-[13px] font-medium text-[color:var(--btn-fg)] transition-colors duration-120 hover:bg-[var(--btn-hover)]'
       }
     >
       <Phone className="size-3.5 shrink-0 text-[color:var(--muted-foreground)]" aria-hidden="true" />
@@ -166,9 +173,7 @@ export function DeskTable({
             <th scope="col">居住地址</th>
             <th scope="col">拨号</th>
             <th scope="col">外呼记录</th>
-            <th scope="col" className="text-right">
-              快捷操作
-            </th>
+            <th scope="col">快捷操作</th>
           </tr>
         </thead>
         <tbody className={loading ? 'opacity-60 transition-opacity duration-120' : 'transition-opacity duration-120'}>
@@ -182,7 +187,7 @@ export function DeskTable({
                       e.stopPropagation();
                       onOpen(c);
                     }}
-                    className="cursor-pointer text-left font-medium hover:underline"
+                    className="cursor-pointer text-left font-medium hover:text-[color:var(--primary-soft-fg)] hover:underline"
                   >
                     {c.name}
                   </button>
@@ -217,8 +222,8 @@ export function DeskTable({
               <td>
                 <CallSummary c={c} />
               </td>
-              <td className="text-right">
-                <div className="desk-row-actions inline-flex items-center justify-end gap-1.5">
+              <td>
+                <div className="inline-flex items-center gap-1.5">
                   <select
                     aria-label={`修改 ${c.name} 阶段`}
                     value={c.rapport_tag}
@@ -227,7 +232,7 @@ export function DeskTable({
                       e.stopPropagation();
                       onChangeStage(c, e.target.value as Customer['rapport_tag']);
                     }}
-                    className="h-7 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--card)] px-1.5 text-[13px] text-[color:var(--foreground)] outline-none transition-colors duration-120 hover:bg-[var(--hover)]"
+                    className="h-7 w-[4.5rem] cursor-pointer rounded-md border border-[var(--btn-border)] bg-[var(--btn-bg)] px-1.5 text-[13px] text-[color:var(--btn-fg)] outline-none transition-colors duration-120 hover:bg-[var(--btn-hover)] focus-visible:border-[var(--primary)]"
                   >
                     {RAPPORT_TAGS.map((tag) => (
                       <option key={tag} value={tag}>

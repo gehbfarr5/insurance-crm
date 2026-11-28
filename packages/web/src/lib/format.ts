@@ -76,11 +76,28 @@ export function fmtShortDate(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-export function followupUrgency(iso: string | null | undefined): 'overdue' | 'today' | 'upcoming' | null {
+export function fmtLocalDateInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+export function localDateInputToIso(dateStr: string): string | null {
+  const m = dateStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 9, 0, 0, 0);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+export function followupUrgency(
+  iso: string | null | undefined,
+  now: Date = new Date(),
+): 'overdue' | 'today' | 'upcoming' | null {
   if (!iso) return null;
   const ts = Date.parse(iso);
   if (Number.isNaN(ts)) return null;
-  const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startOfTomorrow = startOfToday + 86_400_000;
   if (ts < startOfToday) return 'overdue';
@@ -88,16 +105,19 @@ export function followupUrgency(iso: string | null | undefined): 'overdue' | 'to
   return 'upcoming';
 }
 
-export function relTime(iso: string | null | undefined): string {
+export function relTime(iso: string | null | undefined, now: Date = new Date()): string {
   if (!iso) return '';
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
-  const days = Math.floor((Date.now() - t) / 86_400_000);
-  if (days <= 0) return '今天';
-  if (days === 1) return '昨天';
-  if (days < 7) return `${days}天前`;
-  if (days < 30) return `${Math.floor(days / 7)}周前`;
-  return `${Math.floor(days / 30)}个月前`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  const hhmm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfTarget = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.round((startOfToday - startOfTarget) / 86_400_000);
+  if (dayDiff === 0) return `今天 ${hhmm}`;
+  if (dayDiff === 1) return `昨天 ${hhmm}`;
+  if (d.getFullYear() === now.getFullYear()) return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${hhmm}`;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 function stripSyncBlocks(text: string | null | undefined): string {

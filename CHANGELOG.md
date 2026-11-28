@@ -2,6 +2,16 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/) 语义化版本规范，每次正式上线或结构性迭代均更新本文件并打 Git Annotated Tag（`vX.Y.Z`）。
 
+## [1.2.0] - 2026-11-28
+
+确立「晴空海蓝」主题色与浅化按钮体系，修复外呼记录自然日显示偏差与时区边界，并优化桌面端列表常显快捷操作与斑马纹可读性。
+
+### Changed
+- **「晴空海蓝」主题色与全局浅化按钮体系（`index.css` / `lib/ui.ts` / 全站组件）**：引入 `light-dark(#3b6fd8, #5b8ef4)` 主色及 `--primary-soft-*` / `--btn-*` 分层 token，页面主按钮与激活控件统一使用主题色，行内 `邀约 ✓` 与次级操作按钮整体浅化降噪。
+- **外呼时间自然日规范与悬停完整时间戳（`lib/format.ts` / `DeskTable.tsx`）**：重写 `relTime()` 按当地自然日零点切分显示 `今天 HH:mm`、`昨天 HH:mm`、`MM-DD HH:mm` 与跨年 `YYYY-MM-DD`，并用 `<time title>` 提供悬停完整 `YYYY-MM-DD HH:mm`。
+- **时区边界修复（`CustomerDrawer.tsx` / `docker/docker-compose.yml`）**：客户详情「下次跟进」日期选择器改用本地日历与 `09:00` 本地时间往返转换，容器环境补充 `TZ=${TZ:-Asia/Shanghai}` 使服务端视图边界与本地时间一致。
+- **快捷操作常显左对齐与桌面端斑马纹（`DeskTable.tsx` / `index.css`）**：取消行悬停才显露快捷操作，改为常显并左对齐且固定阶段下拉宽度对齐纵列；桌面端表格与通用 `.zebra-rows` 启用全局 CSS 斑马纹（手机端卡片保持不变）。
+
 ## [1.1.0] - 2026-11-28
 
 对标 Twenty / Linear 现代效率工具体系，完成工作台视觉规范、克制动效体系、快捷视图与跟进时间轴升级。
